@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 
+	"ai-model-scheduler/internal/catalog"
 	"ai-model-scheduler/internal/config"
 	"ai-model-scheduler/internal/deploy"
 	"ai-model-scheduler/internal/nomadapi"
@@ -23,6 +24,7 @@ type Server struct {
 	cfg      config.Config
 	nomad    *nomadapi.Client
 	deploy   *deploy.Service
+	catalog  *catalog.Catalog
 	log      *slog.Logger
 	pages    map[string]*template.Template
 	partials *template.Template
@@ -30,7 +32,13 @@ type Server struct {
 
 // New builds a Server with all templates parsed.
 func New(cfg config.Config, nomad *nomadapi.Client, log *slog.Logger) (*Server, error) {
-	s := &Server{cfg: cfg, nomad: nomad, deploy: deploy.New(nomad, cfg), log: log}
+	s := &Server{
+		cfg:     cfg,
+		nomad:   nomad,
+		deploy:  deploy.New(nomad, cfg),
+		catalog: catalog.New(nomad, cfg, log),
+		log:     log,
+	}
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}

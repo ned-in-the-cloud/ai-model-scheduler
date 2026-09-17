@@ -18,6 +18,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/deployments/{name}", s.apiDeleteDeployment)
 	mux.HandleFunc("GET /api/v1/deployments/{name}/logs", s.apiDeploymentLogs)
 	mux.HandleFunc("GET /api/v1/stats/node", s.apiNodeStats)
+	mux.HandleFunc("GET /api/v1/models", s.apiListModels)
+	mux.HandleFunc("POST /api/v1/models/refresh", s.apiRefreshModels)
 
 	// UI pages
 	mux.HandleFunc("GET /{$}", s.uiDashboard)
@@ -25,12 +27,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /deploy", s.uiDeploySubmit)
 	mux.HandleFunc("GET /deployments/{name}", s.uiDeploymentDetail)
 	mux.HandleFunc("DELETE /deployments/{name}", s.uiStopDeployment)
+	mux.HandleFunc("GET /models", s.uiModels)
+	mux.HandleFunc("POST /models/refresh", s.uiRefreshModels)
 
 	// htmx fragments
 	mux.HandleFunc("GET /partials/health", s.partialHealth)
 	mux.HandleFunc("GET /partials/deployments", s.partialDeployments)
 	mux.HandleFunc("GET /partials/node-stats", s.partialNodeStats)
 	mux.HandleFunc("GET /partials/logs", s.partialLogs)
+	mux.HandleFunc("GET /partials/models", s.partialModels)
 
 	// static assets
 	mux.Handle("GET /static/", http.FileServerFS(web.FS))

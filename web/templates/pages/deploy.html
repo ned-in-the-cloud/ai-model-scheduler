@@ -17,7 +17,10 @@
       </select>
     </label>
     <label>Model path <span class="muted">(relative to the model share; empty for Ollama)</span>
-      <input name="model" placeholder="llama3-8b-q4.gguf" value="{{.Params.Model}}">
+      <input name="model" list="model-list" placeholder="llama3-8b-q4.gguf" value="{{.Params.Model}}">
+      <datalist id="model-list">
+        {{range .Models}}<option value="{{.Path}}">{{if eq .Kind "gguf"}}GGUF{{else}}HF dir{{end}} · {{humanBytes .SizeBytes}}</option>{{end}}
+      </datalist>
     </label>
     <label>Port
       <input name="port" type="number" value="{{if .Params.Port}}{{.Params.Port}}{{else}}{{.SuggestedPort}}{{end}}">

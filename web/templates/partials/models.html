@@ -1,0 +1,28 @@
+{{define "partial:models"}}
+{{if .Error}}
+<p class="badge err">{{.Error}}</p>
+{{end}}
+<p>
+  <button class="secondary" hx-post="/models/refresh" hx-target="#models"
+          hx-disabled-elt="this" hx-indicator="#refresh-note">Refresh</button>
+  <span id="refresh-note" class="muted htmx-indicator">Rescanning share…</span>
+  {{if not .FetchedAt.IsZero}}<span class="muted">Last scanned {{.FetchedAt.Format "15:04:05"}}</span>{{end}}
+</p>
+{{if .Models}}
+<table>
+  <thead><tr><th>Path</th><th>Type</th><th>Size</th><th></th></tr></thead>
+  <tbody>
+    {{range .Models}}
+    <tr>
+      <td><code>{{.Path}}</code></td>
+      <td>{{if eq .Kind "gguf"}}GGUF{{else}}HF directory{{end}}</td>
+      <td>{{humanBytes .SizeBytes}}</td>
+      <td><a class="btn" href="/deploy?model={{.Path}}&runtime={{if eq .Kind "gguf"}}llamacpp{{else}}vllm{{end}}">Deploy</a></td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else if not .Error}}
+<p class="muted">No models found on the share.</p>
+{{end}}
+{{end}}

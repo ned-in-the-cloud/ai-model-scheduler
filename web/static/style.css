@@ -115,6 +115,9 @@ pre.logs {
 
 .muted { color: var(--muted); }
 
+.htmx-indicator { opacity: 0; transition: opacity 0.2s; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+
 /* Stat tiles + meters */
 .tile-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 

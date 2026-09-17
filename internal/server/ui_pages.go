@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"ai-model-scheduler/internal/catalog"
 	"ai-model-scheduler/internal/jobspec"
 	"ai-model-scheduler/internal/nomadapi"
 )
@@ -21,14 +22,26 @@ func (s *Server) uiDashboard(w http.ResponseWriter, r *http.Request) {
 type deployFormData struct {
 	Params        jobspec.Params
 	SuggestedPort int
+	Models        []catalog.Entry
 	Error         string
 }
 
-func (s *Server) uiDeployPage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) deployFormData(r *http.Request) deployFormData {
 	data := deployFormData{}
 	if port, err := s.deploy.SuggestPort(); err == nil {
 		data.SuggestedPort = port
 	}
+	// Cached-only: the deploy form must render instantly, never block on an
+	// indexer dispatch. The models page is where refreshes happen.
+	data.Models, _ = s.catalog.Cached()
+	return data
+}
+
+func (s *Server) uiDeployPage(w http.ResponseWriter, r *http.Request) {
+	data := s.deployFormData(r)
+	// Allow prefilling from links on the models page.
+	data.Params.Model = r.URL.Query().Get("model")
+	data.Params.Runtime = r.URL.Query().Get("runtime")
 	s.renderPage(w, "deploy", pageData{Title: "Deploy", Active: "deploy", Data: data})
 }
 
@@ -49,10 +62,9 @@ func (s *Server) uiDeploySubmit(w http.ResponseWriter, r *http.Request) {
 		MemMB:     formInt(r, "mem_mb"),
 	}
 	if err := s.deploy.Deploy(p); err != nil {
-		data := deployFormData{Params: p, Error: err.Error()}
-		if port, perr := s.deploy.SuggestPort(); perr == nil {
-			data.SuggestedPort = port
-		}
+		data := s.deployFormData(r)
+		data.Params = p
+		data.Error = err.Error()
 		s.renderPage(w, "deploy", pageData{Title: "Deploy", Active: "deploy", Data: data})
 		return
 	}
@@ -120,6 +132,10 @@ func (s *Server) findDeploymentQuiet(name string) (nomadapi.Deployment, bool) {
 		}
 	}
 	return nomadapi.Deployment{}, false
+}
+
+func (s *Server) uiModels(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, "models", pageData{Title: "Models", Active: "models"})
 }
 
 func formInt(r *http.Request, key string) int {

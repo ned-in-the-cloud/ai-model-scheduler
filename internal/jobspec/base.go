@@ -15,19 +15,21 @@ import (
 
 // Env carries the environment facts a builder needs, derived from app config.
 type Env struct {
-	Driver        string // podman | docker
-	ModelRootHost string // NAS mount on the remote box, e.g. /mnt/models
-	ModelMount    string // mount point inside containers, e.g. /models
-	Images        config.Images
+	Driver           string // podman | docker
+	ModelRootHost    string // NAS mount on the remote box, e.g. /mnt/models
+	ModelMount       string // mount point inside containers, e.g. /models
+	ImagePullTimeout string // e.g. "45m"; empty leaves the driver default (5m)
+	Images           config.Images
 }
 
 // EnvFromConfig extracts builder inputs from the app configuration.
 func EnvFromConfig(cfg config.Config) Env {
 	return Env{
-		Driver:        cfg.Driver,
-		ModelRootHost: cfg.ModelRootHost,
-		ModelMount:    cfg.ModelMount,
-		Images:        cfg.Images,
+		Driver:           cfg.Driver,
+		ModelRootHost:    cfg.ModelRootHost,
+		ModelMount:       cfg.ModelMount,
+		ImagePullTimeout: cfg.ImagePullTimeout,
+		Images:           cfg.Images,
 	}
 }
 
@@ -143,6 +145,11 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 	}
 	if devices := gpuDevices(p.GPU); devices != nil {
 		task.Config["devices"] = devices
+	}
+	// Both the docker and podman drivers accept this key; their 5m default
+	// is far too short for multi-GB CUDA/ROCm images.
+	if env.ImagePullTimeout != "" {
+		task.Config["image_pull_timeout"] = env.ImagePullTimeout
 	}
 
 	group := &api.TaskGroup{

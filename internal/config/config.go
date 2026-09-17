@@ -44,6 +44,11 @@ type Config struct {
 	// local dev against `nomad agent -dev`.
 	Driver string `yaml:"driver"`
 
+	// ImagePullTimeout is how long a task may spend pulling its container
+	// image before the allocation fails. The drivers default to 5m, which
+	// is far too short for multi-GB ROCm/CUDA images.
+	ImagePullTimeout string `yaml:"image_pull_timeout"`
+
 	HFToken string `yaml:"hf_token"`
 
 	ListenAddr    string `yaml:"listen_addr"`
@@ -63,8 +68,9 @@ func defaults() Config {
 		NomadAddr:     "http://127.0.0.1:4646",
 		ModelRootHost: "/mnt/models",
 		ModelMount:    "/models",
-		Driver:        "podman",
-		ListenAddr:    ":8080",
+		Driver:           "podman",
+		ImagePullTimeout: "45m",
+		ListenAddr:       ":8080",
 		PortMin:       8000,
 		PortMax:       8999,
 		CatalogTTL:    5 * time.Minute,
@@ -105,6 +111,7 @@ func Load() (Config, error) {
 	strVar(&cfg.ModelRootHost, "MODEL_ROOT_HOST")
 	strVar(&cfg.ModelMount, "MODEL_MOUNT")
 	strVar(&cfg.Driver, "NOMAD_DRIVER")
+	strVar(&cfg.ImagePullTimeout, "IMAGE_PULL_TIMEOUT")
 	strVar(&cfg.HFToken, "HF_TOKEN")
 	strVar(&cfg.ListenAddr, "LISTEN_ADDR")
 	strVar(&cfg.BasicAuthUser, "BASIC_AUTH_USER")
@@ -137,6 +144,11 @@ func (c Config) validate() error {
 	}
 	if c.PortMin <= 0 || c.PortMax < c.PortMin {
 		return fmt.Errorf("invalid port range %d-%d", c.PortMin, c.PortMax)
+	}
+	if c.ImagePullTimeout != "" {
+		if _, err := time.ParseDuration(c.ImagePullTimeout); err != nil {
+			return fmt.Errorf("invalid IMAGE_PULL_TIMEOUT %q: %w", c.ImagePullTimeout, err)
+		}
 	}
 	if (c.BasicAuthUser == "") != (c.BasicAuthPass == "") {
 		return fmt.Errorf("BASIC_AUTH_USER and BASIC_AUTH_PASS must be set together")

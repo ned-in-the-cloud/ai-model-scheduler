@@ -40,6 +40,7 @@ Environment variables (or a YAML file via `CONFIG_FILE`; env wins):
 | `NOMAD_ADDR` | `http://127.0.0.1:4646` | Nomad API address |
 | `NOMAD_TOKEN` | – | ACL token, if ACLs are enabled |
 | `NOMAD_DRIVER` | `podman` | Task driver (`docker` for local dev) |
+| `IMAGE_PULL_TIMEOUT` | `45m` | Max time to pull a task's image (driver default is 5m — too short for GPU images) |
 | `MODEL_ROOT_HOST` | `/mnt/models` | NAS mount path on the box |
 | `HF_TOKEN` | – | Hugging Face token for gated repos |
 | `LISTEN_ADDR` | `:8080` | UI listen address |

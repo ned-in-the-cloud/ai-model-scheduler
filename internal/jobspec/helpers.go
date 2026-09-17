@@ -135,6 +135,9 @@ func helperJob(id string, env Env, image string, shArgs []string, readOnly bool,
 		},
 		Resources: &api.Resources{CPU: ptr(cpu), MemoryMB: ptr(mem)},
 	}
+	if env.ImagePullTimeout != "" {
+		task.Config["image_pull_timeout"] = env.ImagePullTimeout
+	}
 	group := &api.TaskGroup{
 		Name:  ptr("helper"),
 		Count: ptr(1),

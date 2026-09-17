@@ -11,9 +11,10 @@ import (
 
 func testEnv(driver string) Env {
 	return Env{
-		Driver:        driver,
-		ModelRootHost: "/mnt/models",
-		ModelMount:    "/models",
+		Driver:           driver,
+		ModelRootHost:    "/mnt/models",
+		ModelMount:       "/models",
+		ImagePullTimeout: "45m",
 		Images: config.Images{
 			LlamaCPP:      "img/llamacpp",
 			LlamaCPPCUDA:  "img/llamacpp-cuda",
@@ -106,6 +107,10 @@ func TestLlamaCPPJob(t *testing.T) {
 	}
 	if _, ok := task.Config["devices"]; ok {
 		t.Errorf("CPU job should not request devices")
+	}
+	if task.Config["image_pull_timeout"] != "45m" {
+		t.Errorf("image_pull_timeout = %v, want 45m (driver default 5m is too short for GPU images)",
+			task.Config["image_pull_timeout"])
 	}
 }
 
@@ -260,6 +265,9 @@ func TestIndexerJob(t *testing.T) {
 	vols := task.Config["volumes"].([]string)
 	if vols[0] != "/mnt/models:/models:ro" {
 		t.Errorf("indexer volume must be read-only: %v", vols)
+	}
+	if task.Config["image_pull_timeout"] != "45m" {
+		t.Errorf("helper image_pull_timeout = %v, want 45m", task.Config["image_pull_timeout"])
 	}
 	script := task.Config["args"].([]string)[1]
 	for _, want := range []string{"*.gguf", "config.json", "/models"} {

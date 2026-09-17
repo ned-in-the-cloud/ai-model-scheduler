@@ -1,11 +1,10 @@
 {{define "partial:node-stats"}}
-{{range .}}
+{{range .Nodes}}
 <div class="tile-row">
   <div class="tile">
     <div class="tile-label">Node</div>
     <div class="tile-value">{{.NodeName}}</div>
     <div class="muted">{{.Status}} · up {{.Uptime}}</div>
-    {{if .GPUs}}<div class="muted">GPU: {{range $i, $g := .GPUs}}{{if $i}}, {{end}}{{$g}}{{end}}</div>{{end}}
   </div>
   <div class="tile">
     <div class="tile-label">CPU</div>
@@ -21,5 +20,33 @@
 </div>
 {{else}}
 <p class="muted">No client nodes found.</p>
+{{end}}
+
+{{if .GPUs}}
+<div class="tile-row">
+  {{range .GPUs}}
+  <div class="tile">
+    <div class="tile-label">{{.Name}}</div>
+    <div class="tile-value">{{if ge .UtilPercent 0.0}}{{printf "%.0f%%" .UtilPercent}}{{else}}—{{end}}</div>
+    {{if ge .UtilPercent 0.0}}
+    <div class="meter"><div class="meter-fill {{meterClass .UtilPercent}}" style="width: {{meterWidth .UtilPercent}}%"></div></div>
+    {{end}}
+    {{if .VRAMTotal}}
+    <div class="muted">VRAM {{humanBytes .VRAMUsed}} / {{humanBytes .VRAMTotal}}</div>
+    <div class="meter"><div class="meter-fill {{meterClass .VRAMPercent}}" style="width: {{meterWidth .VRAMPercent}}%"></div></div>
+    {{end}}
+    {{if or (ge .TempC 0.0) (ge .PowerW 0.0)}}
+    <div class="muted">{{if ge .TempC 0.0}}{{printf "%.0f" .TempC}}°C{{end}}{{if and (ge .TempC 0.0) (ge .PowerW 0.0)}} · {{end}}{{if ge .PowerW 0.0}}{{printf "%.0f" .PowerW}} W{{end}}</div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{else if .GPUNote}}
+<div class="tile-row">
+  <div class="tile">
+    <div class="tile-label">GPU stats</div>
+    <div class="muted">{{.GPUNote}}</div>
+  </div>
+</div>
 {{end}}
 {{end}}

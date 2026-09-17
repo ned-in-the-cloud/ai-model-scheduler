@@ -28,6 +28,7 @@ type Images struct {
 	OllamaIntel   string `yaml:"ollama_intel"`
 	Indexer       string `yaml:"indexer"`
 	HFDownload    string `yaml:"hf_download"`
+	GPUStats      string `yaml:"gpu_stats"`
 }
 
 // Config is the full application configuration.
@@ -87,6 +88,8 @@ func defaults() Config {
 			OllamaIntel:   "", // no well-known default; set IMAGE_OLLAMA_INTEL
 			Indexer:       "docker.io/library/alpine:3.20",
 			HFDownload:    "docker.io/library/python:3.12-slim",
+			// glibc-based: the CDI-injected nvidia-smi binary won't run on musl.
+			GPUStats: "docker.io/library/debian:bookworm-slim",
 		},
 	}
 }
@@ -131,6 +134,7 @@ func Load() (Config, error) {
 	strVar(&cfg.Images.OllamaIntel, "IMAGE_OLLAMA_INTEL")
 	strVar(&cfg.Images.Indexer, "IMAGE_INDEXER")
 	strVar(&cfg.Images.HFDownload, "IMAGE_HFDOWNLOAD")
+	strVar(&cfg.Images.GPUStats, "IMAGE_GPUSTATS")
 
 	return cfg, cfg.validate()
 }

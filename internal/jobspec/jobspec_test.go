@@ -24,6 +24,7 @@ func testEnv(driver string) Env {
 			VLLMROCm:      "img/vllm-rocm",
 			Ollama:        "img/ollama",
 			OllamaROCm:    "img/ollama-rocm",
+			GPUStats:      "img/debian",
 		},
 	}
 }
@@ -290,6 +291,41 @@ func assertInterpolationEscaped(t *testing.T, script string) {
 	}
 	if strings.Contains(strings.ReplaceAll(script, "$${", ""), "$$") {
 		t.Errorf("script contains $$ outside the $${ escape (shell PID expansion):\n%s", script)
+	}
+}
+
+func TestGPUStatsAgentJob(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		nvidia bool
+	}{
+		{name: "with nvidia", nvidia: true},
+		{name: "amd only", nvidia: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			job := GPUStatsAgent(testEnv("podman"), tt.nvidia)
+			if *job.ID != GPUStatsJobID || *job.Type != "service" {
+				t.Errorf("job identity: %s/%s", *job.ID, *job.Type)
+			}
+			task := job.TaskGroups[0].Tasks[0]
+			if task.Config["image"] != "img/debian" {
+				t.Errorf("image = %v", task.Config["image"])
+			}
+			_, hasDevices := task.Config["devices"]
+			if hasDevices != tt.nvidia {
+				t.Errorf("devices present = %v, want %v (CDI only when NVIDIA exists)", hasDevices, tt.nvidia)
+			}
+			script := task.Config["args"].([]string)[1]
+			for _, want := range []string{"gpu_busy_percent", "nvidia-smi", `"gpus"`} {
+				if !strings.Contains(script, want) {
+					t.Errorf("agent script missing %q", want)
+				}
+			}
+			assertInterpolationEscaped(t, script)
+			if job.ParameterizedJob != nil {
+				t.Error("stats agent must not be parameterized")
+			}
+		})
 	}
 }
 

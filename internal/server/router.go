@@ -19,6 +19,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/deployments/{name}/logs", s.apiDeploymentLogs)
 	mux.HandleFunc("GET /api/v1/stats/node", s.apiNodeStats)
 	mux.HandleFunc("GET /api/v1/stats/allocations/{id}", s.apiAllocStats)
+	mux.HandleFunc("GET /api/v1/stats/gpus", s.apiGPUStats)
 	mux.HandleFunc("GET /api/v1/hardware/gpus", s.apiListGPUs)
 	mux.HandleFunc("POST /api/v1/hardware/refresh", s.apiRefreshGPUs)
 	mux.HandleFunc("GET /api/v1/models", s.apiListModels)

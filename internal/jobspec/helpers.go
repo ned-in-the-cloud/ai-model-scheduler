@@ -24,6 +24,7 @@ const (
 	IndexerJobID    = "ams-indexer"
 	HFDownloadJobID = "ams-hf-download"
 	GPUProbeJobID   = "ams-gpu-probe"
+	GPUStatsJobID   = "ams-gpu-stats"
 )
 
 // Indexer builds the parameterized batch job that scans the model share and
@@ -86,6 +87,91 @@ true`
 
 	return helperJob(GPUProbeJobID, env, env.Images.Indexer,
 		[]string{"-c", escapeInterpolation(script)}, true /* no writes needed */, 200, 128)
+}
+
+// GPUStatsAgent builds the long-running service job that samples GPU
+// utilization every few seconds and prints one JSON line per sample to
+// stdout; the app reads the latest sample back through the allocation logs
+// API, so no extra ports or host access are needed. AMD stats come from
+// amdgpu's sysfs (readable without ROCm or device access); NVIDIA stats come
+// from nvidia-smi, which the CDI device injects into the container — so the
+// CDI device is attached only when an NVIDIA GPU is present.
+func GPUStatsAgent(env Env, nvidia bool) *api.Job {
+	// Sentinels in the emitted JSON: -1 = unknown for percentages/temp/power,
+	// 0 = unknown for VRAM byte counts.
+	script := `while true; do
+  ts=$(date +%s)
+  gpus=""
+  for d in /sys/class/drm/card*/device; do
+    [ -e "$d/vendor" ] || continue
+    [ "$(cat "$d/vendor")" = "0x1002" ] || continue
+    pci=$(basename "$(readlink -f "$d")")
+    busy=$(cat "$d/gpu_busy_percent" 2>/dev/null) || busy=-1
+    vu=$(cat "$d/mem_info_vram_used" 2>/dev/null) || vu=0
+    vt=$(cat "$d/mem_info_vram_total" 2>/dev/null) || vt=0
+    temp=-1
+    tf=$(ls "$d"/hwmon/hwmon*/temp1_input 2>/dev/null | head -n1)
+    [ -n "$tf" ] && temp=$(( $(cat "$tf") / 1000 ))
+    pw=-1
+    pf=$(ls "$d"/hwmon/hwmon*/power1_average 2>/dev/null | head -n1)
+    [ -z "$pf" ] && pf=$(ls "$d"/hwmon/hwmon*/power1_input 2>/dev/null | head -n1)
+    [ -n "$pf" ] && pw=$(( $(cat "$pf") / 1000000 ))
+    g=$(printf '{"vendor":"amd","pci":"%s","util_percent":%s,"vram_used_bytes":%s,"vram_total_bytes":%s,"temp_c":%s,"power_w":%s}' "$pci" "$busy" "$vu" "$vt" "$temp" "$pw")
+    gpus="${gpus:+$gpus,}$g"
+  done
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null | sed 's/, /,/g' > /tmp/nv.csv || true
+    while IFS=, read -r name util mu mt temp pw; do
+      [ -n "$name" ] || continue
+      case "$util" in ''|*[!0-9]*) util=-1;; esac
+      case "$mu" in ''|*[!0-9]*) mu=0;; esac
+      case "$mt" in ''|*[!0-9]*) mt=0;; esac
+      case "$temp" in ''|*[!0-9]*) temp=-1;; esac
+      case "$pw" in ''|*[!0-9.]*) pw=-1;; esac
+      name=$(printf '%s' "$name" | tr -d '"\\')
+      g=$(printf '{"vendor":"nvidia","name":"%s","util_percent":%s,"vram_used_bytes":%s,"vram_total_bytes":%s,"temp_c":%s,"power_w":%s}' "$name" "$util" "$((mu*1048576))" "$((mt*1048576))" "$temp" "$pw")
+      gpus="${gpus:+$gpus,}$g"
+    done < /tmp/nv.csv
+  fi
+  printf '{"ts":%s,"gpus":[%s]}\n' "$ts" "$gpus"
+  sleep 5
+done`
+
+	task := &api.Task{
+		Name:   nomadapi.TaskName,
+		Driver: env.Driver,
+		Config: map[string]any{
+			"image":   env.Images.GPUStats,
+			"command": "/bin/sh",
+			"args":    []string{"-c", escapeInterpolation(script)},
+		},
+		Resources: &api.Resources{CPU: ptr(100), MemoryMB: ptr(128)},
+	}
+	if nvidia {
+		task.Config["devices"] = []string{"nvidia.com/gpu=all"}
+	}
+	if env.ImagePullTimeout != "" {
+		task.Config["image_pull_timeout"] = env.ImagePullTimeout
+	}
+
+	group := &api.TaskGroup{
+		Name:  ptr("agent"),
+		Count: ptr(1),
+		Tasks: []*api.Task{task},
+		// Keep retrying quietly if the box hiccups rather than failing dead.
+		RestartPolicy: &api.RestartPolicy{Mode: ptr(api.RestartPolicyModeDelay)},
+	}
+	return &api.Job{
+		ID:          ptr(GPUStatsJobID),
+		Name:        ptr(GPUStatsJobID),
+		Type:        ptr(api.JobTypeService),
+		Datacenters: []string{"*"},
+		TaskGroups:  []*api.TaskGroup{group},
+		Meta: map[string]string{
+			nomadapi.ManagedByKey: nomadapi.ManagedByValue,
+			nomadapi.KindKey:      nomadapi.KindHelper,
+		},
+	}
 }
 
 // HFDownload builds the parameterized batch job that downloads a Hugging

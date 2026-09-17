@@ -8,7 +8,10 @@ a NAS share mounted on the box; containers run under podman.
 - **GPU selection** — a dispatched probe job detects GPUs on the box (NVIDIA,
   AMD, Intel); picking one selects the matching runtime image (CUDA/ROCm/SYCL)
   and device passthrough automatically
-- **Dashboard** — running models, health, endpoints, live CPU/RSS usage, node stats
+- **Dashboard** — running models, health, endpoints, live CPU/RSS usage, node
+  stats, and per-GPU utilization/VRAM/temperature/power (via a small
+  `ams-gpu-stats` service job the app runs on the box: AMD from sysfs,
+  NVIDIA from nvidia-smi)
 - **Model catalog** — browses the NAS share via a dispatched indexer job
 - **Hugging Face downloads** — dispatched batch jobs pull models onto the share
 - Single Go binary, htmx frontend, multi-arch container (amd64 + arm64)
@@ -57,6 +60,7 @@ Environment variables (or a YAML file via `CONFIG_FILE`; env wins):
 | `IMAGE_OLLAMA` | `docker.io/ollama/ollama:latest` | Ollama CPU/NVIDIA image |
 | `IMAGE_OLLAMA_ROCM` | `docker.io/ollama/ollama:rocm` | Ollama AMD image |
 | `IMAGE_OLLAMA_INTEL` | – | Ollama Intel image (unset = unsupported) |
+| `IMAGE_GPUSTATS` | `docker.io/library/debian:bookworm-slim` | GPU stats agent image (glibc required for nvidia-smi) |
 
 A JSON API mirrors everything the UI does under `/api/v1/` (deployments,
 models, downloads, stats, hardware, health). Deployments take a `gpu` field

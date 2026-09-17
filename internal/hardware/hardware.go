@@ -46,6 +46,10 @@ type Service struct {
 	mu      sync.Mutex
 	gpus    []GPU
 	fetched time.Time
+
+	// stats agent registration bookkeeping (see stats.go)
+	agentEnsured   *bool // nil = never; value = registered with NVIDIA CDI or not
+	agentEnsuredAt time.Time
 }
 
 func New(nomad *nomadapi.Client, cfg config.Config, log *slog.Logger) *Service {

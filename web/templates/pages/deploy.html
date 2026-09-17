@@ -1,0 +1,44 @@
+{{define "content"}}
+<h1>Deploy a model</h1>
+
+{{with .Data}}
+{{if .Error}}<section class="card error-card">{{.Error}}</section>{{end}}
+<section class="card">
+  <form class="stack" method="post" action="/deploy">
+    <label>Name
+      <input name="name" required pattern="[a-z0-9][a-z0-9-]{0,30}"
+             placeholder="llama3-8b" value="{{.Params.Name}}">
+    </label>
+    <label>Runtime
+      <select name="runtime">
+        <option value="llamacpp" {{if eq .Params.Runtime "llamacpp"}}selected{{end}}>llama.cpp (GGUF)</option>
+        <option value="vllm" {{if eq .Params.Runtime "vllm"}}selected{{end}}>vLLM (HF directory, GPU)</option>
+        <option value="ollama" {{if eq .Params.Runtime "ollama"}}selected{{end}}>Ollama (server only)</option>
+      </select>
+    </label>
+    <label>Model path <span class="muted">(relative to the model share; empty for Ollama)</span>
+      <input name="model" placeholder="llama3-8b-q4.gguf" value="{{.Params.Model}}">
+    </label>
+    <label>Port
+      <input name="port" type="number" value="{{if .Params.Port}}{{.Params.Port}}{{else}}{{.SuggestedPort}}{{end}}">
+    </label>
+    <label>
+      <span><input type="checkbox" name="gpu" {{if .Params.GPU}}checked{{end}}> Use GPU</span>
+    </label>
+    <label>Context size <span class="muted">(tokens, optional)</span>
+      <input name="ctx_size" type="number" value="{{if .Params.CtxSize}}{{.Params.CtxSize}}{{end}}">
+    </label>
+    <label>Extra arguments <span class="muted">(optional)</span>
+      <input name="extra_args" value="{{.Params.ExtraArgs}}">
+    </label>
+    <label>CPU (MHz) <span class="muted">(default 1000)</span>
+      <input name="cpu_mhz" type="number" value="{{if .Params.CPUMHz}}{{.Params.CPUMHz}}{{end}}">
+    </label>
+    <label>Memory (MB) <span class="muted">(default 4096)</span>
+      <input name="mem_mb" type="number" value="{{if .Params.MemMB}}{{.Params.MemMB}}{{end}}">
+    </label>
+    <div><button type="submit">Deploy</button></div>
+  </form>
+</section>
+{{end}}
+{{end}}

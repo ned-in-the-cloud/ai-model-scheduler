@@ -1,0 +1,189 @@
+package jobspec
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"ai-model-scheduler/internal/config"
+	"ai-model-scheduler/internal/nomadapi"
+)
+
+func testEnv(driver string) Env {
+	return Env{
+		Driver:        driver,
+		ModelRootHost: "/mnt/models",
+		ModelMount:    "/models",
+		Images: config.Images{
+			LlamaCPP:    "img/llamacpp",
+			LlamaCPPGPU: "img/llamacpp-cuda",
+			VLLM:        "img/vllm",
+			Ollama:      "img/ollama",
+		},
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		p       Params
+		wantErr string
+	}{
+		{name: "valid", p: Params{Name: "llama3-8b", Runtime: "llamacpp", Model: "x.gguf"}},
+		{name: "bad name uppercase", p: Params{Name: "Llama", Runtime: "llamacpp", Model: "x"}, wantErr: "name"},
+		{name: "bad name leading dash", p: Params{Name: "-x", Runtime: "llamacpp", Model: "x"}, wantErr: "name"},
+		{name: "unknown runtime", p: Params{Name: "x", Runtime: "tgi", Model: "x"}, wantErr: "runtime"},
+		{name: "missing model", p: Params{Name: "x", Runtime: "vllm"}, wantErr: "model"},
+		{name: "ollama without model ok", p: Params{Name: "x", Runtime: "ollama"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.p.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLlamaCPPJob(t *testing.T) {
+	p := Params{Name: "l3", Runtime: "llamacpp", Model: "sub/l3.gguf", Port: 8001, CtxSize: 4096}
+	job, err := Build(p, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	if *job.ID != "model-l3" || *job.Type != "service" {
+		t.Errorf("job identity: ID=%s Type=%s", *job.ID, *job.Type)
+	}
+	meta := job.Meta
+	if meta[nomadapi.ManagedByKey] != nomadapi.ManagedByValue ||
+		meta[nomadapi.KindKey] != nomadapi.KindInference ||
+		meta[nomadapi.RuntimeKey] != "llamacpp" || meta[nomadapi.ModelKey] != "sub/l3.gguf" {
+		t.Errorf("meta tags: %v", meta)
+	}
+
+	tg := job.TaskGroups[0]
+	port := tg.Networks[0].ReservedPorts[0]
+	if port.Label != "api" || port.Value != 8001 || port.To != 8001 {
+		t.Errorf("port: %+v", port)
+	}
+
+	task := tg.Tasks[0]
+	if task.Driver != "podman" {
+		t.Errorf("driver = %s", task.Driver)
+	}
+	if task.Config["image"] != "img/llamacpp" {
+		t.Errorf("image = %v", task.Config["image"])
+	}
+	args := task.Config["args"].([]string)
+	for _, want := range [][]string{
+		{"-m", "/models/sub/l3.gguf"},
+		{"--port", "8001"},
+		{"-c", "4096"},
+	} {
+		if !containsSeq(args, want) {
+			t.Errorf("args missing %v: %v", want, args)
+		}
+	}
+	if slices.Contains(args, "--n-gpu-layers") {
+		t.Errorf("CPU job should not offload layers: %v", args)
+	}
+	vols := task.Config["volumes"].([]string)
+	if vols[0] != "/mnt/models:/models:ro" {
+		t.Errorf("volumes = %v", vols)
+	}
+	if _, ok := task.Config["devices"]; ok {
+		t.Errorf("CPU job should not request devices")
+	}
+}
+
+func TestLlamaCPPGPUJob(t *testing.T) {
+	p := Params{Name: "l3", Runtime: "llamacpp", Model: "l3.gguf", Port: 8001, GPU: true}
+	job, err := Build(p, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	if task.Config["image"] != "img/llamacpp-cuda" {
+		t.Errorf("image = %v", task.Config["image"])
+	}
+	devices := task.Config["devices"].([]string)
+	if devices[0] != "nvidia.com/gpu=all" {
+		t.Errorf("devices = %v", devices)
+	}
+	if !containsSeq(task.Config["args"].([]string), []string{"--n-gpu-layers", "999"}) {
+		t.Errorf("args missing gpu layers: %v", task.Config["args"])
+	}
+	if job.Meta[nomadapi.GPUKey] != "true" {
+		t.Errorf("gpu meta = %v", job.Meta)
+	}
+}
+
+func TestVLLMJob(t *testing.T) {
+	p := Params{Name: "qwen", Runtime: "vllm", Model: "qwen2-7b", Port: 8002, GPU: true, CtxSize: 8192}
+
+	for _, tt := range []struct {
+		driver  string
+		wantShm any
+	}{
+		{driver: "podman", wantShm: "8g"},
+		{driver: "docker", wantShm: 8 << 30},
+	} {
+		t.Run(tt.driver, func(t *testing.T) {
+			job, err := Build(p, testEnv(tt.driver))
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			task := job.TaskGroups[0].Tasks[0]
+			if task.Config["shm_size"] != tt.wantShm {
+				t.Errorf("shm_size = %v, want %v", task.Config["shm_size"], tt.wantShm)
+			}
+			args := task.Config["args"].([]string)
+			for _, want := range [][]string{
+				{"--model", "/models/qwen2-7b"},
+				{"--served-model-name", "qwen"},
+				{"--max-model-len", "8192"},
+			} {
+				if !containsSeq(args, want) {
+					t.Errorf("args missing %v: %v", want, args)
+				}
+			}
+		})
+	}
+}
+
+func TestOllamaJob(t *testing.T) {
+	p := Params{Name: "oll", Runtime: "ollama", Port: 8003}
+	job, err := Build(p, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	vols := task.Config["volumes"].([]string)
+	if vols[0] != "/mnt/models:/models" {
+		t.Errorf("ollama volume should be read-write: %v", vols)
+	}
+	if task.Env["OLLAMA_MODELS"] != "/models/ollama" {
+		t.Errorf("OLLAMA_MODELS = %v", task.Env)
+	}
+	if task.Env["OLLAMA_HOST"] != "0.0.0.0:8003" {
+		t.Errorf("OLLAMA_HOST = %v", task.Env)
+	}
+}
+
+// containsSeq reports whether want appears as a contiguous subsequence of got.
+func containsSeq(got, want []string) bool {
+	for i := 0; i+len(want) <= len(got); i++ {
+		if slices.Equal(got[i:i+len(want)], want) {
+			return true
+		}
+	}
+	return false
+}

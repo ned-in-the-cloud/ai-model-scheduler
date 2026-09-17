@@ -90,6 +90,37 @@ func (c *Client) ListManaged() ([]Deployment, error) {
 	return out, nil
 }
 
+// Register submits (creates or updates) a job.
+func (c *Client) Register(job *api.Job) error {
+	_, _, err := c.c.Jobs().Register(job, nil)
+	if err != nil {
+		return fmt.Errorf("registering job: %w", err)
+	}
+	return nil
+}
+
+// Stop stops a job, optionally purging it from Nomad's state entirely.
+func (c *Client) Stop(jobID string, purge bool) error {
+	_, _, err := c.c.Jobs().Deregister(jobID, purge, nil)
+	if err != nil {
+		return fmt.Errorf("stopping job %s: %w", jobID, err)
+	}
+	return nil
+}
+
+// JobExists reports whether a job with the given ID is registered (in any
+// status, including dead).
+func (c *Client) JobExists(jobID string) (bool, error) {
+	_, _, err := c.c.Jobs().Info(jobID, nil)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // taskResources returns the resources of the first task in the first group.
 func taskResources(job *api.Job) *api.Resources {
 	if len(job.TaskGroups) == 0 || len(job.TaskGroups[0].Tasks) == 0 {

@@ -1,0 +1,9 @@
+{{define "partial:logs"}}
+{{if .Error}}
+<p class="muted">{{.Error}}</p>
+{{else if .Logs}}
+<pre class="logs">{{.Logs}}</pre>
+{{else}}
+<p class="muted">No {{.Stream}} output yet.</p>
+{{end}}
+{{end}}

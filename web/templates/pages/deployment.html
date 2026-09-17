@@ -1,0 +1,22 @@
+{{define "content"}}
+{{with .Data}}
+<h1>{{.Name}}</h1>
+
+<section class="card">
+  <table>
+    <tr><th>Runtime</th><td>{{.Runtime}}{{if .GPU}} (GPU){{end}}</td></tr>
+    <tr><th>Model</th><td>{{.Model}}</td></tr>
+    <tr><th>Job status</th><td>{{.Status}}</td></tr>
+    <tr><th>Allocation</th><td>{{if .AllocID}}<code>{{.AllocID}}</code> · {{.AllocStatus}}{{else}}<span class="muted">none yet</span>{{end}}</td></tr>
+    <tr><th>Endpoint</th><td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td></tr>
+    <tr><th>Resources</th><td>{{.CPUMHz}} MHz · {{.MemMB}} MB</td></tr>
+  </table>
+</section>
+
+<h2>Logs (stderr)</h2>
+<section id="logs" hx-get="/partials/logs?name={{.Name}}&stream=stderr"
+         hx-trigger="load, every 3s">
+  <p class="muted">Loading logs…</p>
+</section>
+{{end}}
+{{end}}

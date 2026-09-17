@@ -144,6 +144,8 @@ pre.logs {
 .meter:has(.meter-fill.warn) { background: rgba(242, 193, 78, 0.15); }
 .meter:has(.meter-fill.err) { background: rgba(255, 107, 107, 0.15); }
 
+.error-card { border-color: var(--err); color: var(--err); }
+
 code {
   background: rgba(77, 163, 255, 0.08);
   padding: 0.1rem 0.35rem;

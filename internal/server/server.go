@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 
 	"context"
@@ -88,6 +89,25 @@ var templateFuncs = template.FuncMap{
 	"humanBytes": humanBytes,
 	"meterClass": meterClass,
 	"meterWidth": meterWidth,
+	"envLines":   envLines,
+}
+
+// envLines renders an environment map as sorted KEY=VALUE lines for the
+// deploy form's textarea.
+func envLines(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	lines := make([]string, len(keys))
+	for i, k := range keys {
+		lines[i] = k + "=" + env[k]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // meterClass maps a utilization percentage to a severity class per the meter

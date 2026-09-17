@@ -2,8 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"ai-model-scheduler/internal/catalog"
 	"ai-model-scheduler/internal/jobspec"
@@ -22,6 +24,7 @@ func (s *Server) uiDashboard(w http.ResponseWriter, r *http.Request) {
 
 type deployFormData struct {
 	Params        jobspec.Params
+	EnvText       string // raw textarea content on validation errors
 	SuggestedPort int
 	Models        []catalog.Entry
 	Error         string
@@ -85,14 +88,24 @@ func (s *Server) uiDeploySubmit(w http.ResponseWriter, r *http.Request) {
 		Port:      formInt(r, "port"),
 		GPU:       r.FormValue("gpu"),
 		CtxSize:   formInt(r, "ctx_size"),
+		Threads:   formInt(r, "threads"),
+		GPULayers: formInt(r, "gpu_layers"),
 		ExtraArgs: r.FormValue("extra_args"),
 		CPUMHz:    formInt(r, "cpu_mhz"),
 		MemMB:     formInt(r, "mem_mb"),
 	}
-	if err := s.deploy.Deploy(p); err != nil {
+	env, envErr := parseEnvLines(r.FormValue("env"))
+	p.Env = env
+
+	deployErr := envErr
+	if deployErr == nil {
+		deployErr = s.deploy.Deploy(p)
+	}
+	if deployErr != nil {
 		data := s.deployFormData(r)
 		data.Params = p
-		data.Error = err.Error()
+		data.EnvText = r.FormValue("env") // preserve exactly what was typed
+		data.Error = deployErr.Error()
 		s.renderPage(w, "deploy", pageData{Title: "Deploy", Active: "deploy", Data: data})
 		return
 	}
@@ -171,4 +184,27 @@ func (s *Server) uiModels(w http.ResponseWriter, r *http.Request) {
 func formInt(r *http.Request, key string) int {
 	n, _ := strconv.Atoi(r.FormValue(key))
 	return n
+}
+
+// parseEnvLines turns "KEY=VALUE" lines from the deploy form's textarea into
+// an environment map. Blank lines are skipped; anything else malformed is an
+// error rather than silently dropped.
+func parseEnvLines(text string) (map[string]string, error) {
+	env := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("environment line %q is not KEY=VALUE", line)
+		}
+		env[k] = strings.TrimSpace(v)
+	}
+	if len(env) == 0 {
+		return nil, nil
+	}
+	return env, nil
 }

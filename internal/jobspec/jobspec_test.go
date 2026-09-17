@@ -2,6 +2,7 @@ package jobspec
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -298,7 +299,9 @@ func assertInterpolationEscaped(t *testing.T, script string) {
 func TestParamsMetaRoundTrip(t *testing.T) {
 	p := Params{
 		Name: "l3", Runtime: "llamacpp", Model: "sub/l3.gguf", Port: 8001,
-		GPU: "amd", CtxSize: 4096, ExtraArgs: "--flash-attn", CPUMHz: 2000, MemMB: 8192,
+		GPU: "amd", CtxSize: 4096, Threads: 8, GPULayers: 40,
+		Env:       map[string]string{"HSA_OVERRIDE_GFX_VERSION": "12.0.1"},
+		ExtraArgs: "--flash-attn", CPUMHz: 2000, MemMB: 8192,
 	}
 	job, err := Build(p, testEnv("podman"))
 	if err != nil {
@@ -308,8 +311,50 @@ func TestParamsMetaRoundTrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(job.Meta[nomadapi.ParamsKey]), &stored); err != nil {
 		t.Fatalf("params meta not valid JSON: %v", err)
 	}
-	if stored != p {
+	if !reflect.DeepEqual(stored, p) {
 		t.Errorf("params meta = %+v, want %+v", stored, p)
+	}
+}
+
+func TestTuningOptions(t *testing.T) {
+	p := Params{
+		Name: "l3", Runtime: "llamacpp", Model: "l3.gguf", Port: 8001,
+		GPU: "amd", Threads: 12, GPULayers: 30,
+		Env: map[string]string{"HSA_OVERRIDE_GFX_VERSION": "12.0.1"},
+	}
+	job, err := Build(p, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	args := task.Config["args"].([]string)
+	for _, want := range [][]string{{"-t", "12"}, {"--n-gpu-layers", "30"}} {
+		if !containsSeq(args, want) {
+			t.Errorf("args missing %v: %v", want, args)
+		}
+	}
+	if task.Env["HSA_OVERRIDE_GFX_VERSION"] != "12.0.1" {
+		t.Errorf("env not applied: %v", task.Env)
+	}
+
+	if err := (Params{Name: "x", Runtime: "llamacpp", Model: "m",
+		Env: map[string]string{"BAD-NAME": "1"}}).Validate(); err == nil {
+		t.Error("invalid env key accepted")
+	}
+
+	// User env must not clobber Ollama's required defaults logic: defaults
+	// fill only unset keys, user values win when both exist.
+	oj, err := Build(Params{Name: "o", Runtime: "ollama", Port: 8003,
+		Env: map[string]string{"OLLAMA_MODELS": "/models/custom", "OLLAMA_KEEP_ALIVE": "10m"}}, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build ollama: %v", err)
+	}
+	oe := oj.TaskGroups[0].Tasks[0].Env
+	if oe["OLLAMA_MODELS"] != "/models/custom" {
+		t.Errorf("user env should win: %v", oe)
+	}
+	if oe["OLLAMA_HOST"] != "0.0.0.0:8003" || oe["OLLAMA_KEEP_ALIVE"] != "10m" {
+		t.Errorf("ollama env merge: %v", oe)
 	}
 }
 

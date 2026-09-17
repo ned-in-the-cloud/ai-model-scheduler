@@ -32,16 +32,28 @@
         <span class="muted">Detecting GPUs…</span>
       </div>
     </label>
-    <label>Context size <span class="muted">(tokens, optional)</span>
+    <label>Context size <span class="muted">(tokens; empty = model default)</span>
       <input name="ctx_size" type="number" value="{{if .Params.CtxSize}}{{.Params.CtxSize}}{{end}}">
     </label>
-    <label>Extra arguments <span class="muted">(optional)</span>
-      <input name="extra_args" value="{{.Params.ExtraArgs}}">
+    <label>Threads <span class="muted">(llama.cpp only; empty = auto)</span>
+      <input name="threads" type="number" value="{{if .Params.Threads}}{{.Params.Threads}}{{end}}">
     </label>
-    <label>CPU (MHz) <span class="muted">(default 1000)</span>
+    <label>GPU layers <span class="muted">(llama.cpp only; empty = offload all layers)</span>
+      <input name="gpu_layers" type="number" value="{{if .Params.GPULayers}}{{.Params.GPULayers}}{{end}}">
+    </label>
+    <label>Environment variables <span class="muted">(one KEY=VALUE per line)</span>
+      <textarea name="env" rows="3"
+                placeholder="HSA_OVERRIDE_GFX_VERSION=12.0.1">{{if .EnvText}}{{.EnvText}}{{else}}{{envLines .Params.Env}}{{end}}</textarea>
+    </label>
+    <label>Extra arguments <span class="muted">(appended to the server command line)</span>
+      <input name="extra_args" value="{{.Params.ExtraArgs}}" placeholder="--flash-attn on -np 4">
+      <span class="muted">llama.cpp: <code>--flash-attn on</code> · <code>--cache-type-k q8_0</code> · <code>-np 4</code> (parallel slots)</span>
+      <span class="muted">vLLM: <code>--gpu-memory-utilization 0.9</code> · <code>--max-num-seqs 8</code> · <code>--quantization awq</code></span>
+    </label>
+    <label>CPU reservation (MHz) <span class="muted">(Nomad scheduling reservation, not a hard cap; default 1000)</span>
       <input name="cpu_mhz" type="number" value="{{if .Params.CPUMHz}}{{.Params.CPUMHz}}{{end}}">
     </label>
-    <label>Memory (MB) <span class="muted">(default 4096)</span>
+    <label>Memory limit (MB) <span class="muted">(hard limit — the container is killed if it exceeds this; default 4096)</span>
       <input name="mem_mb" type="number" value="{{if .Params.MemMB}}{{.Params.MemMB}}{{end}}">
     </label>
     <div><button type="submit">Deploy</button></div>

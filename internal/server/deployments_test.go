@@ -146,6 +146,66 @@ func TestDeploymentsPartial(t *testing.T) {
 	})
 }
 
+func TestDeploymentsTabCookie(t *testing.T) {
+	srv := newTestServer(t, fakeNomad(t, clusterNomadMux()).URL, nil)
+
+	// Explicit filter sets the cookie.
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/partials/deployments?filter=stopped", nil))
+	var cookie string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "ams-deploy-tab" {
+			cookie = c.Value
+		}
+	}
+	if cookie != "stopped" {
+		t.Fatalf("tab cookie = %q, want stopped", cookie)
+	}
+
+	// No filter + cookie: renders the remembered tab.
+	req := httptest.NewRequest("GET", "/partials/deployments", nil)
+	req.AddCookie(&http.Cookie{Name: "ams-deploy-tab", Value: "stopped"})
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "Relaunch") {
+		t.Errorf("cookie-selected stopped tab not rendered; body: %.300s", rec.Body.String())
+	}
+}
+
+func TestParseEnvLines(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    map[string]string
+		wantErr bool
+	}{
+		{name: "empty", in: "  \n\n"},
+		{
+			name: "two vars with blank line",
+			in:   "HSA_OVERRIDE_GFX_VERSION=12.0.1\n\nHF_TOKEN=abc",
+			want: map[string]string{"HSA_OVERRIDE_GFX_VERSION": "12.0.1", "HF_TOKEN": "abc"},
+		},
+		{name: "value with equals", in: "A=b=c", want: map[string]string{"A": "b=c"}},
+		{name: "missing equals", in: "JUSTAKEY", wantErr: true},
+		{name: "empty key", in: "=value", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseEnvLines(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && len(tt.want) > 0 {
+				for k, v := range tt.want {
+					if got[k] != v {
+						t.Errorf("env[%s] = %q, want %q", k, got[k], v)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestRelaunchPrefill(t *testing.T) {
 	srv := newTestServer(t, fakeNomad(t, clusterNomadMux()).URL, nil)
 	rec := httptest.NewRecorder()

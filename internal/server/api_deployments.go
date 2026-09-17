@@ -50,8 +50,22 @@ func (s *Server) renderDeployments(w http.ResponseWriter, filter string) {
 	s.renderPartial(w, "partial:deployments", data)
 }
 
+// tabCookie remembers the selected deployments tab so page reloads and any
+// request without an explicit filter land on the tab the user was viewing.
+const tabCookie = "ams-deploy-tab"
+
 func (s *Server) partialDeployments(w http.ResponseWriter, r *http.Request) {
-	s.renderDeployments(w, r.URL.Query().Get("filter"))
+	filter := r.URL.Query().Get("filter")
+	if filter == "" {
+		if c, err := r.Cookie(tabCookie); err == nil {
+			filter = c.Value
+		}
+	} else {
+		http.SetCookie(w, &http.Cookie{
+			Name: tabCookie, Value: filter, Path: "/", MaxAge: 30 * 24 * 3600,
+		})
+	}
+	s.renderDeployments(w, filter)
 }
 
 // findDeployment resolves a deployment by name, or writes a 404/502 and

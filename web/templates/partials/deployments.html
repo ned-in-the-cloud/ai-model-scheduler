@@ -31,20 +31,22 @@
           {{else if eq .Status "dead"}}<span class="badge err">stopped</span>
           {{else}}<span class="badge warn">{{if .AllocStatus}}{{.AllocStatus}}{{else}}{{.Status}}{{end}}</span>{{end}}
         </td>
-        <td>{{if and .Endpoint (ne .Status "dead")}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if and .Endpoint (ne .Status "dead")}}<code>{{.Endpoint}}</code><button type="button" class="copy" data-copy="{{.Endpoint}}" onclick="copyText(this)" title="Copy endpoint">⧉</button>{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="muted">{{if .CPUMHz}}{{.CPUMHz}} MHz · {{.MemMB}} MB{{end}}</td>
         <td class="muted">{{if .Healthy}}{{printf "%.0f" .UsageCPUMHz}} MHz · {{humanBytes .UsageMemBytes}}{{else}}—{{end}}</td>
         <td>
-          {{if eq .Status "dead"}}
-          <a class="btn" href="/deploy?from={{.Name}}">Relaunch</a>
-          <button class="danger" hx-delete="/deployments/{{.Name}}?purge=1&filter={{$filter}}"
-                  hx-confirm="Remove {{.Name}} permanently?"
-                  hx-target="#deployments-panel" hx-swap="outerHTML">Remove</button>
-          {{else}}
-          <button class="danger" hx-delete="/deployments/{{.Name}}?filter={{$filter}}"
-                  hx-confirm="Stop {{.Name}}?"
-                  hx-target="#deployments-panel" hx-swap="outerHTML">Stop</button>
-          {{end}}
+          <div class="actions">
+            {{if eq .Status "dead"}}
+            <a class="btn" href="/deploy?from={{.Name}}">Relaunch</a>
+            <button class="danger" hx-delete="/deployments/{{.Name}}?purge=1&filter={{$filter}}"
+                    hx-confirm="Remove {{.Name}} permanently?"
+                    hx-target="#deployments-panel" hx-swap="outerHTML">Remove</button>
+            {{else}}
+            <button class="danger" hx-delete="/deployments/{{.Name}}?filter={{$filter}}"
+                    hx-confirm="Stop {{.Name}}?"
+                    hx-target="#deployments-panel" hx-swap="outerHTML">Stop</button>
+            {{end}}
+          </div>
         </td>
       </tr>
       {{end}}

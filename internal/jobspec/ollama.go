@@ -26,9 +26,17 @@ func ollama(p Params, env Env) (*api.Job, error) {
 
 	task := job.TaskGroups[0].Tasks[0]
 	task.Config["volumes"] = []string{fmt.Sprintf("%s:%s", env.ModelRootHost, env.ModelMount)}
-	task.Env = map[string]string{
+	if task.Env == nil {
+		task.Env = map[string]string{}
+	}
+	// Defaults only — user-supplied env (already in task.Env) wins.
+	for k, v := range map[string]string{
 		"OLLAMA_MODELS": path.Join(env.ModelMount, "ollama"),
 		"OLLAMA_HOST":   fmt.Sprintf("0.0.0.0:%d", p.Port),
+	} {
+		if _, ok := task.Env[k]; !ok {
+			task.Env[k] = v
+		}
 	}
 	return job, nil
 }

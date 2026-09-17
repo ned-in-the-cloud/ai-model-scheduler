@@ -28,8 +28,15 @@ func llamaCPP(p Params, env Env) (*api.Job, error) {
 	if p.CtxSize > 0 {
 		args = append(args, "-c", strconv.Itoa(p.CtxSize))
 	}
+	if p.Threads > 0 {
+		args = append(args, "-t", strconv.Itoa(p.Threads))
+	}
 	if p.GPU != "" {
-		args = append(args, "--n-gpu-layers", "999")
+		layers := 999 // all layers unless the user limits them
+		if p.GPULayers > 0 {
+			layers = p.GPULayers
+		}
+		args = append(args, "--n-gpu-layers", strconv.Itoa(layers))
 	}
 	if extra := strings.Fields(p.ExtraArgs); len(extra) > 0 {
 		args = append(args, extra...)

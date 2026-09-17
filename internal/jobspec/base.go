@@ -6,6 +6,7 @@ package jobspec
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 
 	"github.com/hashicorp/nomad/api"
@@ -36,18 +37,24 @@ func EnvFromConfig(cfg config.Config) Env {
 
 // Params describes one model deployment.
 type Params struct {
-	Name      string `json:"name"`    // deployment name; job ID becomes model-<name>
-	Runtime   string `json:"runtime"` // llamacpp | vllm | ollama
-	Model     string `json:"model"`   // path relative to the model root
-	Port      int    `json:"port"`
-	GPU       string `json:"gpu"` // GPU vendor: "" (CPU) | nvidia | amd | intel
-	CtxSize   int    `json:"ctx_size,omitempty"`
-	ExtraArgs string `json:"extra_args,omitempty"` // whitespace-separated extra CLI args
-	CPUMHz    int    `json:"cpu_mhz,omitempty"`
-	MemMB     int    `json:"mem_mb,omitempty"`
+	Name      string            `json:"name"`    // deployment name; job ID becomes model-<name>
+	Runtime   string            `json:"runtime"` // llamacpp | vllm | ollama
+	Model     string            `json:"model"`   // path relative to the model root
+	Port      int               `json:"port"`
+	GPU       string            `json:"gpu"` // GPU vendor: "" (CPU) | nvidia | amd | intel
+	CtxSize   int               `json:"ctx_size,omitempty"`
+	Threads   int               `json:"threads,omitempty"`    // llama.cpp -t
+	GPULayers int               `json:"gpu_layers,omitempty"` // llama.cpp; 0 = all layers
+	Env       map[string]string `json:"env,omitempty"`        // extra container environment
+	ExtraArgs string            `json:"extra_args,omitempty"` // whitespace-separated extra CLI args
+	CPUMHz    int               `json:"cpu_mhz,omitempty"`
+	MemMB     int               `json:"mem_mb,omitempty"`
 }
 
-var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+var (
+	nameRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+	envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
 
 // Validate checks fields that are independent of cluster state.
 func (p Params) Validate() error {
@@ -66,6 +73,11 @@ func (p Params) Validate() error {
 	}
 	if p.Runtime != "ollama" && p.Model == "" {
 		return fmt.Errorf("model is required")
+	}
+	for k := range p.Env {
+		if !envKeyRe.MatchString(k) {
+			return fmt.Errorf("invalid environment variable name %q", k)
+		}
 	}
 	return nil
 }
@@ -143,6 +155,9 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 			CPU:      ptr(cpu),
 			MemoryMB: ptr(mem),
 		},
+	}
+	if len(p.Env) > 0 {
+		task.Env = maps.Clone(p.Env)
 	}
 	if devices := gpuDevices(p.GPU); devices != nil {
 		task.Config["devices"] = devices

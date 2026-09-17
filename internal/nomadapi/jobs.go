@@ -90,6 +90,35 @@ func (c *Client) ListManaged() ([]Deployment, error) {
 	return out, nil
 }
 
+// JobStub is a minimal view of a registered job.
+type JobStub struct {
+	ID         string
+	Status     string
+	SubmitTime int64 // unix nanos
+}
+
+// ListByPrefix returns jobs whose ID starts with prefix.
+func (c *Client) ListByPrefix(prefix string) ([]JobStub, error) {
+	stubs, _, err := c.c.Jobs().List(&api.QueryOptions{Prefix: prefix})
+	if err != nil {
+		return nil, fmt.Errorf("listing jobs with prefix %s: %w", prefix, err)
+	}
+	out := make([]JobStub, 0, len(stubs))
+	for _, s := range stubs {
+		out = append(out, JobStub{ID: s.ID, Status: s.Status, SubmitTime: s.SubmitTime})
+	}
+	return out, nil
+}
+
+// JobMeta returns a job's merged meta map.
+func (c *Client) JobMeta(jobID string) (map[string]string, error) {
+	job, _, err := c.c.Jobs().Info(jobID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching job %s: %w", jobID, err)
+	}
+	return job.Meta, nil
+}
+
 // Register submits (creates or updates) a job.
 func (c *Client) Register(job *api.Job) error {
 	_, _, err := c.c.Jobs().Register(job, nil)

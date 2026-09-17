@@ -41,6 +41,31 @@ true`, env.ModelMount)
 		[]string{"-c", script}, true /* read-only mount */, 200, 128)
 }
 
+// HFDownload builds the parameterized batch job that downloads a Hugging
+// Face repo into the model share. Dispatch meta: repo_id and dest (required),
+// revision and include (optional). Nomad exposes dispatch meta to the task as
+// NOMAD_META_* environment variables.
+func HFDownload(env Env, hfToken string) *api.Job {
+	script := fmt.Sprintf(`set -e
+export PIP_ROOT_USER_ACTION=ignore
+pip install --quiet 'huggingface_hub[cli]>=0.34'
+echo "downloading $NOMAD_META_repo_id -> %[1]s/$NOMAD_META_dest"
+hf download "$NOMAD_META_repo_id" \
+  ${NOMAD_META_revision:+--revision "$NOMAD_META_revision"} \
+  ${NOMAD_META_include:+--include "$NOMAD_META_include"} \
+  --local-dir "%[1]s/$NOMAD_META_dest"
+echo "download complete"`, env.ModelMount)
+
+	job := helperJob(HFDownloadJobID, env, env.Images.HFDownload,
+		[]string{"-c", script}, false /* needs write access */, 500, 1024)
+	job.ParameterizedJob.MetaRequired = []string{"repo_id", "dest"}
+	job.ParameterizedJob.MetaOptional = []string{"revision", "include"}
+	if hfToken != "" {
+		job.TaskGroups[0].Tasks[0].Env = map[string]string{"HF_TOKEN": hfToken}
+	}
+	return job
+}
+
 // helperJob builds the shared scaffolding for parameterized batch helpers:
 // sh -c task with the model share mounted.
 func helperJob(id string, env Env, image string, shArgs []string, readOnly bool, cpu, mem int) *api.Job {

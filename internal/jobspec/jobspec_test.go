@@ -178,6 +178,48 @@ func TestOllamaJob(t *testing.T) {
 	}
 }
 
+func TestHFDownloadJob(t *testing.T) {
+	job := HFDownload(testEnv("podman"), "hf_secret")
+	if *job.ID != HFDownloadJobID || *job.Type != "batch" {
+		t.Errorf("job identity: %s/%s", *job.ID, *job.Type)
+	}
+	if job.ParameterizedJob == nil ||
+		!slices.Equal(job.ParameterizedJob.MetaRequired, []string{"repo_id", "dest"}) {
+		t.Errorf("parameterized config: %+v", job.ParameterizedJob)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	if task.Env["HF_TOKEN"] != "hf_secret" {
+		t.Errorf("HF_TOKEN not set: %v", task.Env)
+	}
+	vols := task.Config["volumes"].([]string)
+	if vols[0] != "/mnt/models:/models" {
+		t.Errorf("download volume must be read-write: %v", vols)
+	}
+
+	// Without a token the env must not be set at all.
+	if task := HFDownload(testEnv("podman"), "").TaskGroups[0].Tasks[0]; task.Env["HF_TOKEN"] != "" {
+		t.Errorf("unexpected HF_TOKEN: %v", task.Env)
+	}
+}
+
+func TestIndexerJob(t *testing.T) {
+	job := Indexer(testEnv("podman"))
+	if *job.ID != IndexerJobID || *job.Type != "batch" {
+		t.Errorf("job identity: %s/%s", *job.ID, *job.Type)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	vols := task.Config["volumes"].([]string)
+	if vols[0] != "/mnt/models:/models:ro" {
+		t.Errorf("indexer volume must be read-only: %v", vols)
+	}
+	script := task.Config["args"].([]string)[1]
+	for _, want := range []string{"*.gguf", "config.json", "/models"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("indexer script missing %q", want)
+		}
+	}
+}
+
 // containsSeq reports whether want appears as a contiguous subsequence of got.
 func containsSeq(got, want []string) bool {
 	for i := 0; i+len(want) <= len(got); i++ {

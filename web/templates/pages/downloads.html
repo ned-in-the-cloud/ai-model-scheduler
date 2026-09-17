@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1>Hugging Face downloads</h1>
+
+<section class="card">
+  <form class="stack" hx-post="/downloads" hx-target="#download-form-error">
+    <div id="download-form-error"></div>
+    <label>Repository <span class="muted">(org/name)</span>
+      <input name="repo_id" required placeholder="bartowski/Llama-3.3-70B-Instruct-GGUF">
+    </label>
+    <label>Include pattern <span class="muted">(optional, e.g. *Q4_K_M.gguf)</span>
+      <input name="include">
+    </label>
+    <label>Revision <span class="muted">(optional)</span>
+      <input name="revision">
+    </label>
+    <label>Destination folder <span class="muted">(optional; defaults to org/name)</span>
+      <input name="dest">
+    </label>
+    <div><button type="submit">Download to share</button></div>
+  </form>
+</section>
+
+<h2>Downloads</h2>
+<section class="card" id="downloads"
+         hx-get="/partials/downloads" hx-trigger="load, every 4s">
+  <p class="muted">Loading downloads…</p>
+</section>
+
+<h2>Logs</h2>
+<section class="card" id="download-logs">
+  <p class="muted">Select a download to view its logs.</p>
+</section>
+{{end}}

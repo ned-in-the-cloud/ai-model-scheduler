@@ -1,0 +1,47 @@
+{{define "partial:downloads"}}
+{{if .Error}}<p class="badge err">{{.Error}}</p>{{end}}
+{{if .Downloads}}
+<table>
+  <thead><tr><th>Repository</th><th>Destination</th><th>Started</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {{range .Downloads}}
+    <tr>
+      <td><code>{{.RepoID}}</code>{{if .Include}} <span class="muted">({{.Include}})</span>{{end}}</td>
+      <td class="muted">{{.Dest}}</td>
+      <td class="muted">{{.SubmittedAt.Format "Jan 2 15:04"}}</td>
+      <td>
+        {{if eq .Status "complete"}}<span class="badge ok">complete</span>
+        {{else if eq .Status "failed"}}<span class="badge err">failed</span>
+        {{else if eq .Status "running"}}<span class="badge warn">running</span>
+        {{else}}<span class="badge muted">{{.Status}}</span>{{end}}
+      </td>
+      <td>
+        <button class="secondary" hx-get="/partials/download-logs?id={{.ID}}"
+                hx-target="#download-logs">Logs</button>
+        <button class="danger" hx-delete="/downloads/{{.ID}}"
+                hx-confirm="Remove this download record?{{if eq .Status "running"}} It is still running and will be stopped.{{end}}"
+                hx-target="#downloads">Remove</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else if not .Error}}
+<p class="muted">No downloads yet.</p>
+{{end}}
+{{end}}
+
+{{define "partial:download-logs"}}
+{{if .Error}}
+<p class="muted">{{.Error}}</p>
+{{else if .Logs}}
+<p class="muted"><code>{{.ID}}</code></p>
+<pre class="logs">{{.Logs}}</pre>
+{{else}}
+<p class="muted">No output yet.</p>
+{{end}}
+{{end}}
+
+{{define "partial:download-error"}}
+<p class="badge err">{{.}}</p>
+{{end}}

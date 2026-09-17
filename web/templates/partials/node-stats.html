@@ -5,6 +5,7 @@
     <div class="tile-label">Node</div>
     <div class="tile-value">{{.NodeName}}</div>
     <div class="muted">{{.Status}} · up {{.Uptime}}</div>
+    {{if .GPUs}}<div class="muted">GPU: {{range $i, $g := .GPUs}}{{if $i}}, {{end}}{{$g}}{{end}}</div>{{end}}
   </div>
   <div class="tile">
     <div class="tile-label">CPU</div>

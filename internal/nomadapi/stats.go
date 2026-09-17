@@ -15,6 +15,38 @@ type NodeStats struct {
 	MemTotal   int64         `json:"mem_total_bytes"`
 	MemPercent float64       `json:"mem_percent"`
 	Uptime     time.Duration `json:"uptime_seconds"`
+	GPUs       []string      `json:"gpus,omitempty"` // e.g. "nvidia/gpu/RTX 4090 ×1"
+}
+
+// AllocUsage is a point-in-time resource usage sample for one allocation.
+type AllocUsage struct {
+	CPUMHz   float64 `json:"cpu_mhz"`
+	MemBytes int64   `json:"mem_bytes"`
+}
+
+// AllocStats fetches current CPU/memory usage for an allocation.
+func (c *Client) AllocStats(allocID string) (AllocUsage, error) {
+	alloc, _, err := c.c.Allocations().Info(allocID, nil)
+	if err != nil {
+		return AllocUsage{}, fmt.Errorf("fetching allocation %s: %w", allocID, err)
+	}
+	usage, err := c.c.Allocations().Stats(alloc, nil)
+	if err != nil {
+		return AllocUsage{}, fmt.Errorf("fetching stats for %s: %w", allocID, err)
+	}
+	var out AllocUsage
+	if ru := usage.ResourceUsage; ru != nil {
+		if ru.CpuStats != nil {
+			out.CPUMHz = ru.CpuStats.TotalTicks
+		}
+		if ru.MemoryStats != nil {
+			out.MemBytes = int64(ru.MemoryStats.RSS)
+			if out.MemBytes == 0 {
+				out.MemBytes = int64(ru.MemoryStats.Usage)
+			}
+		}
+	}
+	return out, nil
 }
 
 // NodeStats returns utilization for every ready client node (typically one).
@@ -43,6 +75,13 @@ func (c *Client) NodeStats() ([]NodeStats, error) {
 					}
 				}
 				ns.Uptime = time.Duration(hs.Uptime) * time.Second
+			}
+			if info, _, err := c.c.Nodes().Info(n.ID, nil); err == nil && info.NodeResources != nil {
+				for _, dev := range info.NodeResources.Devices {
+					if dev.Type == "gpu" {
+						ns.GPUs = append(ns.GPUs, fmt.Sprintf("%s ×%d", dev.Name, len(dev.Instances)))
+					}
+				}
 			}
 		}
 		out = append(out, ns)

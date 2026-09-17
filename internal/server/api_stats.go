@@ -11,6 +11,15 @@ func (s *Server) apiNodeStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func (s *Server) apiAllocStats(w http.ResponseWriter, r *http.Request) {
+	usage, err := s.nomad.AllocStats(r.PathValue("id"))
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "fetching allocation stats: %v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
+}
+
 func (s *Server) partialNodeStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.nomad.NodeStats()
 	if err != nil {

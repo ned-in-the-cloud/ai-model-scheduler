@@ -6,7 +6,7 @@
   <thead>
     <tr>
       <th>Name</th><th>Runtime</th><th>Model</th><th>Status</th>
-      <th>Endpoint</th><th>Resources</th><th></th>
+      <th>Endpoint</th><th>Resources</th><th>Usage</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -22,6 +22,7 @@
       </td>
       <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="muted">{{if .CPUMHz}}{{.CPUMHz}} MHz · {{.MemMB}} MB{{end}}</td>
+      <td class="muted">{{if .Healthy}}{{printf "%.0f" .UsageCPUMHz}} MHz · {{humanBytes .UsageMemBytes}}{{else}}—{{end}}</td>
       <td>
         {{if ne .Status "dead"}}
         <button class="danger" hx-delete="/api/v1/deployments/{{.Name}}"

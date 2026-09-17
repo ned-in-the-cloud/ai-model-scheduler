@@ -40,6 +40,10 @@ type Deployment struct {
 	GPU         bool   `json:"gpu"`
 	CPUMHz      int    `json:"cpu_mhz,omitempty"`
 	MemMB       int    `json:"mem_mb,omitempty"`
+
+	// Live usage, filled only while the allocation is running.
+	UsageCPUMHz   float64 `json:"usage_cpu_mhz,omitempty"`
+	UsageMemBytes int64   `json:"usage_mem_bytes,omitempty"`
 }
 
 // ListManaged returns all inference jobs owned by this application, newest
@@ -83,6 +87,12 @@ func (c *Client) ListManaged() ([]Deployment, error) {
 			d.AllocStatus = alloc.ClientStatus
 			d.Healthy = alloc.ClientStatus == api.AllocClientStatusRunning
 			d.Endpoint, d.Port = allocEndpoint(alloc)
+			if d.Healthy {
+				if usage, err := c.AllocStats(alloc.ID); err == nil {
+					d.UsageCPUMHz = usage.CPUMHz
+					d.UsageMemBytes = usage.MemBytes
+				}
+			}
 		}
 		out = append(out, d)
 	}

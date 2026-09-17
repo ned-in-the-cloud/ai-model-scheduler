@@ -18,6 +18,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/deployments/{name}", s.apiDeleteDeployment)
 	mux.HandleFunc("GET /api/v1/deployments/{name}/logs", s.apiDeploymentLogs)
 	mux.HandleFunc("GET /api/v1/stats/node", s.apiNodeStats)
+	mux.HandleFunc("GET /api/v1/stats/allocations/{id}", s.apiAllocStats)
 	mux.HandleFunc("GET /api/v1/models", s.apiListModels)
 	mux.HandleFunc("POST /api/v1/models/refresh", s.apiRefreshModels)
 	mux.HandleFunc("GET /api/v1/downloads", s.apiListDownloads)

@@ -45,6 +45,11 @@ func clusterNomadMux() *http.ServeMux {
 			"AllocatedResources":{"Shared":{"Ports":[{"Label":"api","Value":8001,"HostIP":"10.0.0.5"}]}}
 		}`))
 	})
+	mux.HandleFunc("/v1/client/allocation/alloc-new/stats", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"ResourceUsage":{"CpuStats":{"TotalTicks":850.5},"MemoryStats":{"RSS":3221225472}}
+		}`))
+	})
 	mux.HandleFunc("/v1/node/", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"ID":"n1","Name":"inference-box","Status":"ready"}`))
 	})
@@ -85,6 +90,9 @@ func TestListDeployments(t *testing.T) {
 	}
 	if d.CPUMHz != 2000 || d.MemMB != 4096 {
 		t.Errorf("resources = %d MHz / %d MB", d.CPUMHz, d.MemMB)
+	}
+	if d.UsageCPUMHz != 850.5 || d.UsageMemBytes != 3221225472 {
+		t.Errorf("usage = %v MHz / %d bytes, want 850.5 / 3221225472", d.UsageCPUMHz, d.UsageMemBytes)
 	}
 }
 

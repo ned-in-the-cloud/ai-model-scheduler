@@ -18,9 +18,24 @@ func clusterNomadMux() *http.ServeMux {
 	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[
 			{"ID":"model-llama3","Status":"running"},
+			{"ID":"model-old","Status":"dead"},
 			{"ID":"model-rogue","Status":"running"},
 			{"ID":"unrelated-job","Status":"running"}
 		]`))
+	})
+	mux.HandleFunc("/v1/job/model-old", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"ID":"model-old",
+			"Meta":{
+				"managed-by":"ai-model-scheduler","kind":"inference",
+				"runtime":"llamacpp","model":"old.gguf","gpu":"nvidia",
+				"params":"{\"name\":\"old\",\"runtime\":\"llamacpp\",\"model\":\"old.gguf\",\"port\":8005,\"gpu\":\"nvidia\",\"ctx_size\":16384,\"extra_args\":\"--flash-attn\"}"
+			},
+			"TaskGroups":[{"Tasks":[{"Resources":{"CPU":1500,"MemoryMB":8192}}]}]
+		}`))
+	})
+	mux.HandleFunc("/v1/job/model-old/allocations", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
 	})
 	mux.HandleFunc("/v1/job/model-llama3", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
@@ -75,8 +90,8 @@ func TestListDeployments(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &deps); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
-	if len(deps) != 1 {
-		t.Fatalf("got %d deployments, want 1 (untagged and foreign jobs excluded): %+v", len(deps), deps)
+	if len(deps) != 2 {
+		t.Fatalf("got %d deployments, want 2 (untagged and foreign jobs excluded): %+v", len(deps), deps)
 	}
 	d := deps[0]
 	if d.Name != "llama3" || d.Runtime != "llamacpp" || d.Model != "llama3-q4.gguf" {
@@ -98,17 +113,59 @@ func TestListDeployments(t *testing.T) {
 
 func TestDeploymentsPartial(t *testing.T) {
 	srv := newTestServer(t, fakeNomad(t, clusterNomadMux()).URL, nil)
+
+	t.Run("running tab", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/partials/deployments?filter=running", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		body := rec.Body.String()
+		for _, want := range []string{"llama3", "10.0.0.5:8001", "Running (1)", "Stopped (1)"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("partial missing %q; body: %s", want, body)
+			}
+		}
+		if strings.Contains(body, "model-old") || strings.Contains(body, "Relaunch") {
+			t.Errorf("running tab leaked stopped rows; body: %s", body)
+		}
+	})
+
+	t.Run("stopped tab", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/partials/deployments?filter=stopped", nil))
+		body := rec.Body.String()
+		for _, want := range []string{"old", "Relaunch", "Remove", "purge=1"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("stopped tab missing %q; body: %s", want, body)
+			}
+		}
+		if strings.Contains(body, "10.0.0.5:8001") {
+			t.Errorf("stopped tab leaked running rows; body: %s", body)
+		}
+	})
+}
+
+func TestRelaunchPrefill(t *testing.T) {
+	srv := newTestServer(t, fakeNomad(t, clusterNomadMux()).URL, nil)
 	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/partials/deployments", nil))
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/deploy?from=old", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"llama3", "10.0.0.5:8001", "running"} {
+	// Values stored in the params meta must land back in the form.
+	for _, want := range []string{
+		`value="old"`, `value="old.gguf"`, `value="8005"`,
+		`value="16384"`, `value="--flash-attn"`,
+	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("partial missing %q; body: %s", want, body)
+			t.Errorf("form missing prefill %s", want)
 		}
+	}
+	if !strings.Contains(body, "gpu=nvidia") {
+		t.Errorf("gpu fragment not seeded with stored vendor; body: %.500s", body)
 	}
 }
 

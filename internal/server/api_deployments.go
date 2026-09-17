@@ -18,13 +18,40 @@ func (s *Server) apiListDeployments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deps)
 }
 
-func (s *Server) partialDeployments(w http.ResponseWriter, r *http.Request) {
+type deploymentsPartialData struct {
+	Filter  string // running | stopped
+	Running int
+	Stopped int
+	Rows    []nomadapi.Deployment
+}
+
+// renderDeployments renders the tabbed deployments panel for one filter.
+func (s *Server) renderDeployments(w http.ResponseWriter, filter string) {
+	if filter != "stopped" {
+		filter = "running"
+	}
 	deps, err := s.nomad.ListManaged()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	s.renderPartial(w, "partial:deployments", deps)
+	data := deploymentsPartialData{Filter: filter}
+	for _, d := range deps {
+		stopped := d.Status == "dead"
+		if stopped {
+			data.Stopped++
+		} else {
+			data.Running++
+		}
+		if stopped == (filter == "stopped") {
+			data.Rows = append(data.Rows, d)
+		}
+	}
+	s.renderPartial(w, "partial:deployments", data)
+}
+
+func (s *Server) partialDeployments(w http.ResponseWriter, r *http.Request) {
+	s.renderDeployments(w, r.URL.Query().Get("filter"))
 }
 
 // findDeployment resolves a deployment by name, or writes a 404/502 and

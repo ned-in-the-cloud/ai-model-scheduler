@@ -18,6 +18,9 @@ const (
 	RuntimeKey     = "runtime"
 	ModelKey       = "model"
 	GPUKey         = "gpu"
+	// ParamsKey stores the full deployment parameters as JSON so a stopped
+	// job can be relaunched with every setting intact.
+	ParamsKey = "params"
 
 	// JobPrefix prefixes every inference job ID (e.g. model-llama3).
 	JobPrefix = "model-"

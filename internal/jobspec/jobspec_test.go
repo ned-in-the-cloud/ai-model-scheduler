@@ -1,6 +1,7 @@
 package jobspec
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -291,6 +292,24 @@ func assertInterpolationEscaped(t *testing.T, script string) {
 	}
 	if strings.Contains(strings.ReplaceAll(script, "$${", ""), "$$") {
 		t.Errorf("script contains $$ outside the $${ escape (shell PID expansion):\n%s", script)
+	}
+}
+
+func TestParamsMetaRoundTrip(t *testing.T) {
+	p := Params{
+		Name: "l3", Runtime: "llamacpp", Model: "sub/l3.gguf", Port: 8001,
+		GPU: "amd", CtxSize: 4096, ExtraArgs: "--flash-attn", CPUMHz: 2000, MemMB: 8192,
+	}
+	job, err := Build(p, testEnv("podman"))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var stored Params
+	if err := json.Unmarshal([]byte(job.Meta[nomadapi.ParamsKey]), &stored); err != nil {
+		t.Fatalf("params meta not valid JSON: %v", err)
+	}
+	if stored != p {
+		t.Errorf("params meta = %+v, want %+v", stored, p)
 	}
 }
 

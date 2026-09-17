@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -39,10 +40,37 @@ func (s *Server) deployFormData(r *http.Request) deployFormData {
 
 func (s *Server) uiDeployPage(w http.ResponseWriter, r *http.Request) {
 	data := s.deployFormData(r)
-	// Allow prefilling from links on the models page.
-	data.Params.Model = r.URL.Query().Get("model")
-	data.Params.Runtime = r.URL.Query().Get("runtime")
+	if from := r.URL.Query().Get("from"); from != "" {
+		// Relaunch: prefill the form from a stopped deployment.
+		data.Params = s.relaunchParams(from)
+	} else {
+		// Allow prefilling from links on the models page.
+		data.Params.Model = r.URL.Query().Get("model")
+		data.Params.Runtime = r.URL.Query().Get("runtime")
+	}
 	s.renderPage(w, "deploy", pageData{Title: "Deploy", Active: "deploy", Data: data})
+}
+
+// relaunchParams reconstructs deployment parameters from an existing job:
+// the full set from the params meta when present, else what the job listing
+// carries (jobs deployed before params were stored in meta).
+func (s *Server) relaunchParams(name string) jobspec.Params {
+	p := jobspec.Params{Name: name}
+	if d, ok := s.findDeploymentQuiet(name); ok {
+		p = jobspec.Params{
+			Name: d.Name, Runtime: d.Runtime, Model: d.Model,
+			GPU: d.GPU, Port: d.Port, CPUMHz: d.CPUMHz, MemMB: d.MemMB,
+		}
+	}
+	if meta, err := s.nomad.JobMeta(nomadapi.JobPrefix + name); err == nil {
+		if raw := meta[nomadapi.ParamsKey]; raw != "" {
+			var stored jobspec.Params
+			if json.Unmarshal([]byte(raw), &stored) == nil && stored.Name != "" {
+				p = stored
+			}
+		}
+	}
+	return p
 }
 
 func (s *Server) uiDeploySubmit(w http.ResponseWriter, r *http.Request) {
@@ -80,16 +108,18 @@ func (s *Server) uiDeploymentDetail(w http.ResponseWriter, r *http.Request) {
 	s.renderPage(w, "deployment", pageData{Title: d.Name, Active: "dashboard", Data: s.deploymentDetail(d)})
 }
 
-// uiStopDeployment stops a deployment and returns the refreshed deployments
-// table so htmx can swap it in place.
+// uiStopDeployment stops (or, with ?purge=1, permanently removes) a
+// deployment and returns the refreshed deployments panel so htmx can swap
+// it in place, preserving the active tab via ?filter.
 func (s *Server) uiStopDeployment(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := s.deploy.Stop(name, false); err != nil {
+	purge := r.URL.Query().Get("purge") == "1"
+	if err := s.deploy.Stop(name, purge); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	s.log.Info("deployment stopped", "name", name)
-	s.partialDeployments(w, r)
+	s.log.Info("deployment stopped", "name", name, "purge", purge)
+	s.renderDeployments(w, r.URL.Query().Get("filter"))
 }
 
 type logsData struct {

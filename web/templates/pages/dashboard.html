@@ -8,7 +8,7 @@
 
 <h2>Deployed models</h2>
 <section class="card" id="deployments"
-         hx-get="/partials/deployments" hx-trigger="load, every 5s">
+         hx-get="/partials/deployments?filter=running" hx-trigger="load">
   <p class="muted">Loading deployments…</p>
 </section>
 {{end}}

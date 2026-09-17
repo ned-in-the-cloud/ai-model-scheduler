@@ -4,6 +4,7 @@
 package jobspec
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 
@@ -165,6 +166,7 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 		Tasks: []*api.Task{task},
 	}
 
+	paramsJSON, _ := json.Marshal(p)
 	return &api.Job{
 		ID:          ptr(jobID),
 		Name:        ptr(jobID),
@@ -177,6 +179,7 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 			nomadapi.RuntimeKey:   p.Runtime,
 			nomadapi.ModelKey:     p.Model,
 			nomadapi.GPUKey:       p.GPU,
+			nomadapi.ParamsKey:    string(paramsJSON),
 		},
 	}
 }

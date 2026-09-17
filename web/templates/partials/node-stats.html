@@ -26,7 +26,7 @@
 <div class="tile-row">
   {{range .GPUs}}
   <div class="tile">
-    <div class="tile-label">{{.Name}}</div>
+    <div class="tile-name">{{.Name}}</div>
     <div class="tile-value">{{if ge .UtilPercent 0.0}}{{printf "%.0f%%" .UtilPercent}}{{else}}—{{end}}</div>
     {{if ge .UtilPercent 0.0}}
     <div class="meter"><div class="meter-fill {{meterClass .UtilPercent}}" style="width: {{meterWidth .UtilPercent}}%"></div></div>

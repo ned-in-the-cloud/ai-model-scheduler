@@ -1,37 +1,55 @@
 {{define "partial:deployments"}}
-{{if not .}}
-<p class="muted">No models deployed yet.</p>
-{{else}}
-<table>
-  <thead>
-    <tr>
-      <th>Name</th><th>Runtime</th><th>Model</th><th>Status</th>
-      <th>Endpoint</th><th>Resources</th><th>Usage</th><th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .}}
-    <tr>
-      <td><a href="/deployments/{{.Name}}">{{.Name}}</a></td>
-      <td>{{.Runtime}}{{if .GPU}} <span class="badge muted">{{.GPU}}</span>{{end}}</td>
-      <td class="muted">{{.Model}}</td>
-      <td>
-        {{if .Healthy}}<span class="badge ok">running</span>
-        {{else if eq .Status "dead"}}<span class="badge err">stopped</span>
-        {{else}}<span class="badge warn">{{if .AllocStatus}}{{.AllocStatus}}{{else}}{{.Status}}{{end}}</span>{{end}}
-      </td>
-      <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-      <td class="muted">{{if .CPUMHz}}{{.CPUMHz}} MHz · {{.MemMB}} MB{{end}}</td>
-      <td class="muted">{{if .Healthy}}{{printf "%.0f" .UsageCPUMHz}} MHz · {{humanBytes .UsageMemBytes}}{{else}}—{{end}}</td>
-      <td>
-        {{if ne .Status "dead"}}
-        <button class="danger" hx-delete="/api/v1/deployments/{{.Name}}"
-                hx-confirm="Stop {{.Name}}?" hx-target="#deployments" hx-swap="innerHTML">Stop</button>
-        {{end}}
-      </td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
-{{end}}
+<div id="deployments-panel" hx-get="/partials/deployments?filter={{.Filter}}"
+     hx-trigger="every 5s" hx-swap="outerHTML">
+  <div class="tabs">
+    <button class="{{if eq .Filter "running"}}active{{end}}"
+            hx-get="/partials/deployments?filter=running"
+            hx-target="#deployments-panel" hx-swap="outerHTML">Running ({{.Running}})</button>
+    <button class="{{if eq .Filter "stopped"}}active{{end}}"
+            hx-get="/partials/deployments?filter=stopped"
+            hx-target="#deployments-panel" hx-swap="outerHTML">Stopped ({{.Stopped}})</button>
+  </div>
+  {{if not .Rows}}
+  <p class="muted">{{if eq .Filter "running"}}No models running.{{else}}No stopped models.{{end}}</p>
+  {{else}}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Runtime</th><th>Model</th><th>Status</th>
+        <th>Endpoint</th><th>Resources</th><th>Usage</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{$filter := .Filter}}
+      {{range .Rows}}
+      <tr>
+        <td><a href="/deployments/{{.Name}}">{{.Name}}</a></td>
+        <td>{{.Runtime}}{{if .GPU}} <span class="badge muted">{{.GPU}}</span>{{end}}</td>
+        <td class="muted">{{.Model}}</td>
+        <td>
+          {{if .Healthy}}<span class="badge ok">running</span>
+          {{else if eq .Status "dead"}}<span class="badge err">stopped</span>
+          {{else}}<span class="badge warn">{{if .AllocStatus}}{{.AllocStatus}}{{else}}{{.Status}}{{end}}</span>{{end}}
+        </td>
+        <td>{{if and .Endpoint (ne .Status "dead")}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="muted">{{if .CPUMHz}}{{.CPUMHz}} MHz · {{.MemMB}} MB{{end}}</td>
+        <td class="muted">{{if .Healthy}}{{printf "%.0f" .UsageCPUMHz}} MHz · {{humanBytes .UsageMemBytes}}{{else}}—{{end}}</td>
+        <td>
+          {{if eq .Status "dead"}}
+          <a class="btn" href="/deploy?from={{.Name}}">Relaunch</a>
+          <button class="danger" hx-delete="/deployments/{{.Name}}?purge=1&filter={{$filter}}"
+                  hx-confirm="Remove {{.Name}} permanently?"
+                  hx-target="#deployments-panel" hx-swap="outerHTML">Remove</button>
+          {{else}}
+          <button class="danger" hx-delete="/deployments/{{.Name}}?filter={{$filter}}"
+                  hx-confirm="Stop {{.Name}}?"
+                  hx-target="#deployments-panel" hx-swap="outerHTML">Stop</button>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</div>
 {{end}}

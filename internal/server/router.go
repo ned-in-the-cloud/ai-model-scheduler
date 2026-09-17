@@ -12,12 +12,16 @@ func (s *Server) Handler() http.Handler {
 
 	// JSON API
 	mux.HandleFunc("GET /api/v1/health", s.apiHealth)
+	mux.HandleFunc("GET /api/v1/deployments", s.apiListDeployments)
+	mux.HandleFunc("GET /api/v1/stats/node", s.apiNodeStats)
 
 	// UI pages
 	mux.HandleFunc("GET /{$}", s.uiDashboard)
 
 	// htmx fragments
 	mux.HandleFunc("GET /partials/health", s.partialHealth)
+	mux.HandleFunc("GET /partials/deployments", s.partialDeployments)
+	mux.HandleFunc("GET /partials/node-stats", s.partialNodeStats)
 
 	// static assets
 	mux.Handle("GET /static/", http.FileServerFS(web.FS))

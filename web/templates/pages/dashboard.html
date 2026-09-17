@@ -1,6 +1,14 @@
 {{define "content"}}
 <h1>Dashboard</h1>
-<section class="card">
-  <p>Welcome. Deployment and monitoring views arrive in later milestones.</p>
+
+<section class="card" id="node-stats"
+         hx-get="/partials/node-stats" hx-trigger="load, every 5s">
+  <p class="muted">Loading node stats…</p>
+</section>
+
+<h2>Deployed models</h2>
+<section class="card" id="deployments"
+         hx-get="/partials/deployments" hx-trigger="load, every 5s">
+  <p class="muted">Loading deployments…</p>
 </section>
 {{end}}

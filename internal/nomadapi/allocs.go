@@ -1,0 +1,62 @@
+package nomadapi
+
+import (
+	"fmt"
+	"net"
+	"strconv"
+
+	"github.com/hashicorp/nomad/api"
+)
+
+// LatestAlloc returns the most recently created allocation for a job, or nil
+// if the job has none.
+func (c *Client) LatestAlloc(jobID string) (*api.Allocation, error) {
+	stubs, _, err := c.c.Jobs().Allocations(jobID, false, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing allocations for %s: %w", jobID, err)
+	}
+	var latest *api.AllocationListStub
+	for _, s := range stubs {
+		if latest == nil || s.CreateIndex > latest.CreateIndex {
+			latest = s
+		}
+	}
+	if latest == nil {
+		return nil, nil
+	}
+	alloc, _, err := c.c.Allocations().Info(latest.ID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching allocation %s: %w", latest.ID, err)
+	}
+	return alloc, nil
+}
+
+// allocEndpoint extracts the host endpoint (ip:port) for the PortLabel port
+// from an allocation's actual port mapping.
+func allocEndpoint(alloc *api.Allocation) (string, int) {
+	if alloc.AllocatedResources != nil {
+		for _, p := range alloc.AllocatedResources.Shared.Ports {
+			if p.Label == PortLabel {
+				return net.JoinHostPort(p.HostIP, strconv.Itoa(p.Value)), p.Value
+			}
+		}
+		for _, nw := range alloc.AllocatedResources.Shared.Networks {
+			for _, p := range append(nw.ReservedPorts, nw.DynamicPorts...) {
+				if p.Label == PortLabel {
+					return net.JoinHostPort(nw.IP, strconv.Itoa(p.Value)), p.Value
+				}
+			}
+		}
+	}
+	// Fallback for older allocation payloads.
+	if alloc.Resources != nil {
+		for _, nw := range alloc.Resources.Networks {
+			for _, p := range append(nw.ReservedPorts, nw.DynamicPorts...) {
+				if p.Label == PortLabel {
+					return net.JoinHostPort(nw.IP, strconv.Itoa(p.Value)), p.Value
+				}
+			}
+		}
+	}
+	return "", 0
+}

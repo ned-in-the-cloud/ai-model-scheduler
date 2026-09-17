@@ -63,6 +63,26 @@ func (s *Server) parseTemplates() error {
 
 var templateFuncs = template.FuncMap{
 	"humanBytes": humanBytes,
+	"meterClass": meterClass,
+	"meterWidth": meterWidth,
+}
+
+// meterClass maps a utilization percentage to a severity class per the meter
+// spec: accent below 75%, warning to 90%, danger above.
+func meterClass(pct float64) string {
+	switch {
+	case pct >= 90:
+		return "err"
+	case pct >= 75:
+		return "warn"
+	default:
+		return "ok"
+	}
+}
+
+// meterWidth clamps a percentage to [0,100] for use as a CSS width.
+func meterWidth(pct float64) float64 {
+	return min(max(pct, 0), 100)
 }
 
 func humanBytes(n int64) string {

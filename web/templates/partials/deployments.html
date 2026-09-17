@@ -1,0 +1,36 @@
+{{define "partial:deployments"}}
+{{if not .}}
+<p class="muted">No models deployed yet.</p>
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Runtime</th><th>Model</th><th>Status</th>
+      <th>Endpoint</th><th>Resources</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td><a href="/deployments/{{.Name}}">{{.Name}}</a></td>
+      <td>{{.Runtime}}{{if .GPU}} <span class="badge muted">GPU</span>{{end}}</td>
+      <td class="muted">{{.Model}}</td>
+      <td>
+        {{if .Healthy}}<span class="badge ok">running</span>
+        {{else if eq .Status "dead"}}<span class="badge err">stopped</span>
+        {{else}}<span class="badge warn">{{if .AllocStatus}}{{.AllocStatus}}{{else}}{{.Status}}{{end}}</span>{{end}}
+      </td>
+      <td>{{if .Endpoint}}<code>{{.Endpoint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+      <td class="muted">{{if .CPUMHz}}{{.CPUMHz}} MHz · {{.MemMB}} MB{{end}}</td>
+      <td>
+        {{if ne .Status "dead"}}
+        <button class="danger" hx-delete="/api/v1/deployments/{{.Name}}"
+                hx-confirm="Stop {{.Name}}?" hx-target="#deployments" hx-swap="innerHTML">Stop</button>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

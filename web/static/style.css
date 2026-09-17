@@ -114,3 +114,39 @@ pre.logs {
 }
 
 .muted { color: var(--muted); }
+
+/* Stat tiles + meters */
+.tile-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+.tile {
+  flex: 1 1 12rem;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.25rem 0;
+}
+
+.tile-label { color: var(--muted); font-size: 0.85rem; }
+.tile-value { font-size: 1.6rem; font-weight: 600; }
+
+/* Meter: fill carries severity; the unfilled track is a lighter step of the
+   same ramp so state reads across the whole bar. */
+.meter {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(77, 163, 255, 0.15);
+  overflow: hidden;
+}
+
+.meter-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.meter-fill.ok { background: var(--accent); }
+.meter-fill.warn { background: var(--warn); }
+.meter-fill.err { background: var(--err); }
+.meter:has(.meter-fill.warn) { background: rgba(242, 193, 78, 0.15); }
+.meter:has(.meter-fill.err) { background: rgba(255, 107, 107, 0.15); }
+
+code {
+  background: rgba(77, 163, 255, 0.08);
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.85em;
+}

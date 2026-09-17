@@ -62,11 +62,15 @@ echo "downloading $NOMAD_META_repo_id -> %[1]s/$NOMAD_META_dest"
 hf download "$NOMAD_META_repo_id" \
   ${NOMAD_META_revision:+--revision "$NOMAD_META_revision"} \
   ${NOMAD_META_include:+--include "$NOMAD_META_include"} \
+  --max-workers 2 \
   --local-dir "%[1]s/$NOMAD_META_dest"
 echo "download complete"`, env.ModelMount)
 
+	// Memory must cover the page cache for buffered writes to the share
+	// (cgroup v2 charges it to the task), not just the Python process —
+	// too small a limit OOM-kills large downloads mid-transfer.
 	job := helperJob(HFDownloadJobID, env, env.Images.HFDownload,
-		[]string{"-c", escapeInterpolation(script)}, false /* needs write access */, 500, 1024)
+		[]string{"-c", escapeInterpolation(script)}, false /* needs write access */, 500, 4096)
 	job.ParameterizedJob.MetaRequired = []string{"repo_id", "dest"}
 	job.ParameterizedJob.MetaOptional = []string{"revision", "include"}
 	if hfToken != "" {

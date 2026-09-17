@@ -34,9 +34,11 @@ job "ams-hf-download" {
 
       # HF_TOKEN is injected from the app's config when set.
 
+      # Memory covers page cache for buffered writes to the share, not just
+      # the Python process — cgroup v2 charges it to the task.
       resources {
         cpu    = 500
-        memory = 1024
+        memory = 4096
       }
     }
   }

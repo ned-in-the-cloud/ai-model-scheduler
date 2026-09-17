@@ -195,6 +195,11 @@ func TestHFDownloadJob(t *testing.T) {
 	if vols[0] != "/mnt/models:/models" {
 		t.Errorf("download volume must be read-write: %v", vols)
 	}
+	// Page cache for buffered writes is charged to the task under cgroup v2;
+	// a too-small limit OOM-kills large downloads (seen with a 1024MB limit).
+	if mem := *task.Resources.MemoryMB; mem < 4096 {
+		t.Errorf("download memory = %d MB, want >= 4096", mem)
+	}
 
 	// Without a token the env must not be set at all.
 	if task := HFDownload(testEnv("podman"), "").TaskGroups[0].Tasks[0]; task.Env["HF_TOKEN"] != "" {

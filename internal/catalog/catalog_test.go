@@ -109,6 +109,29 @@ not json noise
 	}
 }
 
+func TestRefreshParsesPodmanPrefixedManifest(t *testing.T) {
+	// podman's k8s-file log driver prefixes every line; the nomadapi layer
+	// strips it, and the parser must still see the JSON.
+	f := &fakeIndexerNomad{
+		status: "complete",
+		stdout: `2026-09-17T18:00:00.000000001+00:00 stdout F {"kind":"gguf","path":"llama3-q4.gguf","size_bytes":4000000000}
+2026-09-17T18:00:00.000000002+00:00 stdout F {"kind":"hf-dir","path":"qwen2-7b","size_bytes":15000000000}
+`,
+	}
+	c := newTestCatalog(t, f)
+
+	entries, _, err := c.Entries(context.Background())
+	if err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2: %+v", len(entries), entries)
+	}
+	if entries[0].Path != "llama3-q4.gguf" || entries[1].Path != "qwen2-7b" {
+		t.Errorf("entries: %+v", entries)
+	}
+}
+
 func TestRefreshFailedJobSurfacesStderr(t *testing.T) {
 	f := &fakeIndexerNomad{status: "failed", stdout: ""}
 	c := newTestCatalog(t, f)

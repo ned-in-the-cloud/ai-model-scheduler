@@ -129,14 +129,17 @@ func (c *Catalog) Refresh(ctx context.Context) error {
 }
 
 // parseManifest decodes NDJSON output from the indexer, skipping lines that
-// are not valid JSON objects (e.g. stray shell noise).
+// are not valid JSON objects (e.g. stray shell noise). A line only needs to
+// contain an object, not start with one, so leftover log-driver prefixes
+// can't hide entries.
 func parseManifest(out string) ([]Entry, error) {
 	entries := []Entry{}
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, "{") {
+		i := strings.Index(line, "{")
+		if i < 0 {
 			continue
 		}
+		line = line[i:]
 		var e Entry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			continue

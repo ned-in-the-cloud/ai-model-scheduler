@@ -112,21 +112,27 @@ func latestSample(tail string) (gpuSample, bool) {
 }
 
 // enrichNames fills in display names and VRAM percentages. AMD entries carry
-// only a PCI address; when the probe found exactly one GPU of that vendor,
-// its marketing name is used.
+// only a PCI address; the probe's name for the same PCI device is used, or
+// the vendor's single GPU when the address doesn't match.
 func (s *Service) enrichNames(gpus []GPUStats) []GPUStats {
 	s.mu.Lock()
 	probed := s.gpus
 	s.mu.Unlock()
 
+	byPCI := map[string]GPU{}
 	byVendor := map[string][]GPU{}
 	for _, p := range probed {
+		if p.PCI != "" {
+			byPCI[p.PCI] = p
+		}
 		byVendor[p.Vendor] = append(byVendor[p.Vendor], p)
 	}
 	for i := range gpus {
 		g := &gpus[i]
 		if g.Name == "" {
-			if candidates := byVendor[g.Vendor]; len(candidates) == 1 {
+			if p, ok := byPCI[g.PCI]; ok && g.PCI != "" {
+				g.Name = p.Name
+			} else if candidates := byVendor[g.Vendor]; len(candidates) == 1 {
 				g.Name = candidates[0].Name
 			} else {
 				g.Name = strings.TrimSpace(g.Vendor + " " + g.PCI)

@@ -54,10 +54,19 @@ func TestEnrichNames(t *testing.T) {
 		t.Errorf("nvidia name overwritten: %q", got[1].Name)
 	}
 
-	// Two GPUs of the same vendor: fall back to vendor+PCI, never guess.
-	svc.gpus = append(svc.gpus, GPU{Vendor: "amd", Name: "Second AMD", PCI: "0000:04:00.0"})
-	got = svc.enrichNames([]GPUStats{{Vendor: "amd", PCI: "0000:03:00.0"}})
-	if got[0].Name != "amd 0000:03:00.0" {
+	// Two GPUs of the same vendor (dGPU + iGPU): resolve by PCI address.
+	svc.gpus = append(svc.gpus, GPU{Vendor: "amd", Name: "AMD iGPU", PCI: "0000:04:00.0"})
+	got = svc.enrichNames([]GPUStats{
+		{Vendor: "amd", PCI: "0000:03:00.0"},
+		{Vendor: "amd", PCI: "0000:04:00.0"},
+	})
+	if got[0].Name != "AMD Radeon R9700" || got[1].Name != "AMD iGPU" {
+		t.Errorf("PCI-matched names = %q, %q", got[0].Name, got[1].Name)
+	}
+
+	// Unknown PCI with an ambiguous vendor: fall back to vendor+PCI, never guess.
+	got = svc.enrichNames([]GPUStats{{Vendor: "amd", PCI: "0000:09:00.0"}})
+	if got[0].Name != "amd 0000:09:00.0" {
 		t.Errorf("ambiguous vendor name = %q, want fallback", got[0].Name)
 	}
 }

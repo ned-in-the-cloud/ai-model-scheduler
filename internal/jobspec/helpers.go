@@ -59,7 +59,8 @@ true`, env.ModelMount)
 // GPU to stdout. Friendly names come from the NVIDIA procfs when present,
 // then best-effort lspci; the fallback is the PCI vendor:device ID.
 func GPUProbe(env Env) *api.Job {
-	script := `apk add -q --no-cache pciutils 2>/dev/null || true
+	script := `apk add -q --no-cache pciutils ca-certificates 2>/dev/null || true
+update-pciids -q >/dev/null 2>&1 || true
 i=0
 for d in /sys/bus/pci/devices/*; do
   class=$(cat "$d/class" 2>/dev/null) || continue
@@ -76,7 +77,7 @@ for d in /sys/bus/pci/devices/*; do
     name=$(sed -n 's/^Model:[[:space:]]*//p' "/proc/driver/nvidia/gpus/$pci/information" | head -n1)
   fi
   if [ -z "$name" ] && command -v lspci >/dev/null 2>&1; then
-    name=$(lspci -mm -s "$pci" 2>/dev/null | awk -F'"' '{print $4" "$6}')
+    name=$(lspci -mm -s "$pci" 2>/dev/null | awk -F'"' '{print $4" "$6}' | sed 's/Advanced Micro Devices, Inc\. \[AMD\/ATI\]/AMD/; s/Intel Corporation/Intel/; s/NVIDIA Corporation/NVIDIA/')
   fi
   [ -z "$name" ] && name="$vendor device ${ven#0x}:${dev#0x}"
   name=$(printf '%s' "$name" | tr -d '"\\')

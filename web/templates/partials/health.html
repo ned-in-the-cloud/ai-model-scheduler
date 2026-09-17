@@ -1,0 +1,7 @@
+{{define "partial:health"}}
+{{if .Reachable}}
+<span class="badge ok" title="Leader: {{.Leader}} · {{.Nodes}} node(s)">Nomad ✓</span>
+{{else}}
+<span class="badge err" title="{{.Error}}">Nomad ✗</span>
+{{end}}
+{{end}}

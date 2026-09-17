@@ -13,7 +13,7 @@
     {{range .}}
     <tr>
       <td><a href="/deployments/{{.Name}}">{{.Name}}</a></td>
-      <td>{{.Runtime}}{{if .GPU}} <span class="badge muted">GPU</span>{{end}}</td>
+      <td>{{.Runtime}}{{if .GPU}} <span class="badge muted">{{.GPU}}</span>{{end}}</td>
       <td class="muted">{{.Model}}</td>
       <td>
         {{if .Healthy}}<span class="badge ok">running</span>

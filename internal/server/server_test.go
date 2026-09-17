@@ -41,6 +41,14 @@ func newTestServer(t *testing.T, nomadURL string, mutate func(*config.Config)) *
 		ListenAddr: ":0",
 		PortMin:    8000,
 		PortMax:    8999,
+		Images: config.Images{
+			LlamaCPP:     "img/llamacpp",
+			LlamaCPPCUDA: "img/llamacpp-cuda",
+			VLLM:         "img/vllm",
+			Ollama:       "img/ollama",
+			Indexer:      "img/alpine",
+			HFDownload:   "img/python",
+		},
 	}
 	if mutate != nil {
 		mutate(&cfg)

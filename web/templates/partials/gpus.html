@@ -1,0 +1,16 @@
+{{define "partial:gpus"}}
+<select name="gpu">
+  <option value="">None (CPU)</option>
+  {{range .GPUs}}
+  <option value="{{.Vendor}}" {{if eq $.Selected .Vendor}}selected{{end}}>{{.Name}}</option>
+  {{end}}
+</select>
+<div>
+  <button type="button" class="secondary" hx-post="/hardware/refresh"
+          hx-target="closest .gpu-select" hx-include="closest form"
+          hx-disabled-elt="this">Rescan hardware</button>
+  {{if .Error}}<span class="badge err">{{.Error}}</span>
+  {{else if .GPUs}}<span class="muted">{{len .GPUs}} GPU(s) detected</span>
+  {{else}}<span class="muted">No GPUs detected</span>{{end}}
+</div>
+{{end}}

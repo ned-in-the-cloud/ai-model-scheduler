@@ -15,10 +15,14 @@ func testEnv(driver string) Env {
 		ModelRootHost: "/mnt/models",
 		ModelMount:    "/models",
 		Images: config.Images{
-			LlamaCPP:    "img/llamacpp",
-			LlamaCPPGPU: "img/llamacpp-cuda",
-			VLLM:        "img/vllm",
-			Ollama:      "img/ollama",
+			LlamaCPP:      "img/llamacpp",
+			LlamaCPPCUDA:  "img/llamacpp-cuda",
+			LlamaCPPROCm:  "img/llamacpp-rocm",
+			LlamaCPPIntel: "img/llamacpp-intel",
+			VLLM:          "img/vllm",
+			VLLMROCm:      "img/vllm-rocm",
+			Ollama:        "img/ollama",
+			OllamaROCm:    "img/ollama-rocm",
 		},
 	}
 }
@@ -33,6 +37,7 @@ func TestValidate(t *testing.T) {
 		{name: "bad name uppercase", p: Params{Name: "Llama", Runtime: "llamacpp", Model: "x"}, wantErr: "name"},
 		{name: "bad name leading dash", p: Params{Name: "-x", Runtime: "llamacpp", Model: "x"}, wantErr: "name"},
 		{name: "unknown runtime", p: Params{Name: "x", Runtime: "tgi", Model: "x"}, wantErr: "runtime"},
+		{name: "unknown gpu vendor", p: Params{Name: "x", Runtime: "llamacpp", Model: "x", GPU: "voodoo"}, wantErr: "gpu vendor"},
 		{name: "missing model", p: Params{Name: "x", Runtime: "vllm"}, wantErr: "model"},
 		{name: "ollama without model ok", p: Params{Name: "x", Runtime: "ollama"}},
 	}
@@ -105,29 +110,41 @@ func TestLlamaCPPJob(t *testing.T) {
 }
 
 func TestLlamaCPPGPUJob(t *testing.T) {
-	p := Params{Name: "l3", Runtime: "llamacpp", Model: "l3.gguf", Port: 8001, GPU: true}
-	job, err := Build(p, testEnv("podman"))
-	if err != nil {
-		t.Fatalf("Build: %v", err)
+	tests := []struct {
+		vendor      string
+		wantImage   string
+		wantDevices []string
+	}{
+		{vendor: "nvidia", wantImage: "img/llamacpp-cuda", wantDevices: []string{"nvidia.com/gpu=all"}},
+		{vendor: "amd", wantImage: "img/llamacpp-rocm", wantDevices: []string{"/dev/kfd", "/dev/dri"}},
+		{vendor: "intel", wantImage: "img/llamacpp-intel", wantDevices: []string{"/dev/dri"}},
 	}
-	task := job.TaskGroups[0].Tasks[0]
-	if task.Config["image"] != "img/llamacpp-cuda" {
-		t.Errorf("image = %v", task.Config["image"])
-	}
-	devices := task.Config["devices"].([]string)
-	if devices[0] != "nvidia.com/gpu=all" {
-		t.Errorf("devices = %v", devices)
-	}
-	if !containsSeq(task.Config["args"].([]string), []string{"--n-gpu-layers", "999"}) {
-		t.Errorf("args missing gpu layers: %v", task.Config["args"])
-	}
-	if job.Meta[nomadapi.GPUKey] != "true" {
-		t.Errorf("gpu meta = %v", job.Meta)
+	for _, tt := range tests {
+		t.Run(tt.vendor, func(t *testing.T) {
+			p := Params{Name: "l3", Runtime: "llamacpp", Model: "l3.gguf", Port: 8001, GPU: tt.vendor}
+			job, err := Build(p, testEnv("podman"))
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			task := job.TaskGroups[0].Tasks[0]
+			if task.Config["image"] != tt.wantImage {
+				t.Errorf("image = %v, want %v", task.Config["image"], tt.wantImage)
+			}
+			if got := task.Config["devices"].([]string); !slices.Equal(got, tt.wantDevices) {
+				t.Errorf("devices = %v, want %v", got, tt.wantDevices)
+			}
+			if !containsSeq(task.Config["args"].([]string), []string{"--n-gpu-layers", "999"}) {
+				t.Errorf("args missing gpu layers: %v", task.Config["args"])
+			}
+			if job.Meta[nomadapi.GPUKey] != tt.vendor {
+				t.Errorf("gpu meta = %v", job.Meta)
+			}
+		})
 	}
 }
 
 func TestVLLMJob(t *testing.T) {
-	p := Params{Name: "qwen", Runtime: "vllm", Model: "qwen2-7b", Port: 8002, GPU: true, CtxSize: 8192}
+	p := Params{Name: "qwen", Runtime: "vllm", Model: "qwen2-7b", Port: 8002, GPU: "nvidia", CtxSize: 8192}
 
 	for _, tt := range []struct {
 		driver  string
@@ -156,6 +173,33 @@ func TestVLLMJob(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVLLMGPURequirements(t *testing.T) {
+	env := testEnv("podman")
+
+	if _, err := Build(Params{Name: "q", Runtime: "vllm", Model: "m", GPU: ""}, env); err == nil ||
+		!strings.Contains(err.Error(), "requires a GPU") {
+		t.Errorf("CPU vllm err = %v, want GPU requirement", err)
+	}
+
+	// Intel has no default vLLM image; the error must name the fix.
+	if _, err := Build(Params{Name: "q", Runtime: "vllm", Model: "m", GPU: "intel"}, env); err == nil ||
+		!strings.Contains(err.Error(), "IMAGE_") {
+		t.Errorf("intel vllm err = %v, want unconfigured-image error", err)
+	}
+
+	job, err := Build(Params{Name: "q", Runtime: "vllm", Model: "m", GPU: "amd"}, env)
+	if err != nil {
+		t.Fatalf("amd vllm: %v", err)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	if task.Config["image"] != "img/vllm-rocm" {
+		t.Errorf("image = %v", task.Config["image"])
+	}
+	if got := task.Config["devices"].([]string); !slices.Equal(got, []string{"/dev/kfd", "/dev/dri"}) {
+		t.Errorf("devices = %v", got)
 	}
 }
 

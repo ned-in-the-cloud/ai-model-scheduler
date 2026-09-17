@@ -4,7 +4,7 @@
 
 <section class="card">
   <table>
-    <tr><th>Runtime</th><td>{{.Runtime}}{{if .GPU}} (GPU){{end}}</td></tr>
+    <tr><th>Runtime</th><td>{{.Runtime}}{{if .GPU}} ({{.GPU}}){{end}}</td></tr>
     <tr><th>Model</th><td>{{.Model}}</td></tr>
     <tr><th>Job status</th><td>{{.Status}}</td></tr>
     <tr><th>Allocation</th><td>{{if .AllocID}}<code>{{.AllocID}}</code> · {{.AllocStatus}}{{else}}<span class="muted">none yet</span>{{end}}</td></tr>

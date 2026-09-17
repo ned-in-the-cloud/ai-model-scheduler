@@ -23,6 +23,7 @@ func escapeInterpolation(script string) string {
 const (
 	IndexerJobID    = "ams-indexer"
 	HFDownloadJobID = "ams-hf-download"
+	GPUProbeJobID   = "ams-gpu-probe"
 )
 
 // Indexer builds the parameterized batch job that scans the model share and
@@ -48,6 +49,43 @@ true`, env.ModelMount)
 
 	return helperJob(IndexerJobID, env, env.Images.Indexer,
 		[]string{"-c", escapeInterpolation(script)}, true /* read-only mount */, 200, 128)
+}
+
+// GPUProbe builds the batch job that detects GPUs on the box. It enumerates
+// PCI display-class devices via sysfs (visible inside containers and
+// independent of which GPU drivers are loaded, so a freshly swapped-in card
+// still shows up), maps vendor IDs to names, and prints one JSON object per
+// GPU to stdout. Friendly names come from the NVIDIA procfs when present,
+// then best-effort lspci; the fallback is the PCI vendor:device ID.
+func GPUProbe(env Env) *api.Job {
+	script := `apk add -q --no-cache pciutils 2>/dev/null || true
+i=0
+for d in /sys/bus/pci/devices/*; do
+  class=$(cat "$d/class" 2>/dev/null) || continue
+  case "$class" in 0x03*) ;; *) continue;; esac
+  ven=$(cat "$d/vendor"); dev=$(cat "$d/device"); pci=$(basename "$d")
+  case "$ven" in
+    0x10de) vendor=nvidia;;
+    0x1002) vendor=amd;;
+    0x8086) vendor=intel;;
+    *) vendor=other;;
+  esac
+  name=""
+  if [ "$vendor" = nvidia ] && [ -r "/proc/driver/nvidia/gpus/$pci/information" ]; then
+    name=$(sed -n 's/^Model:[[:space:]]*//p' "/proc/driver/nvidia/gpus/$pci/information" | head -n1)
+  fi
+  if [ -z "$name" ] && command -v lspci >/dev/null 2>&1; then
+    name=$(lspci -mm -s "$pci" 2>/dev/null | awk -F'"' '{print $4" "$6}')
+  fi
+  [ -z "$name" ] && name="$vendor device ${ven#0x}:${dev#0x}"
+  name=$(printf '%s' "$name" | tr -d '"\\')
+  printf '{"index":%s,"vendor":"%s","name":"%s","pci":"%s"}\n' "$i" "$vendor" "$name" "$pci"
+  i=$((i+1))
+done
+true`
+
+	return helperJob(GPUProbeJobID, env, env.Images.Indexer,
+		[]string{"-c", escapeInterpolation(script)}, true /* no writes needed */, 200, 128)
 }
 
 // HFDownload builds the parameterized batch job that downloads a Hugging

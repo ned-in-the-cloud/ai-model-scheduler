@@ -12,14 +12,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Images holds the container images used for inference runtimes and helper jobs.
+// Images holds the container images used for inference runtimes and helper
+// jobs. Runtimes have one image per GPU vendor; an empty value means the
+// combination is unsupported until the user configures an image for it.
 type Images struct {
-	LlamaCPP    string `yaml:"llamacpp"`
-	LlamaCPPGPU string `yaml:"llamacpp_gpu"`
-	VLLM        string `yaml:"vllm"`
-	Ollama      string `yaml:"ollama"`
-	Indexer     string `yaml:"indexer"`
-	HFDownload  string `yaml:"hf_download"`
+	LlamaCPP      string `yaml:"llamacpp"`
+	LlamaCPPCUDA  string `yaml:"llamacpp_cuda"`
+	LlamaCPPROCm  string `yaml:"llamacpp_rocm"`
+	LlamaCPPIntel string `yaml:"llamacpp_intel"`
+	VLLM          string `yaml:"vllm"`
+	VLLMROCm      string `yaml:"vllm_rocm"`
+	VLLMIntel     string `yaml:"vllm_intel"`
+	Ollama        string `yaml:"ollama"`
+	OllamaROCm    string `yaml:"ollama_rocm"`
+	OllamaIntel   string `yaml:"ollama_intel"`
+	Indexer       string `yaml:"indexer"`
+	HFDownload    string `yaml:"hf_download"`
 }
 
 // Config is the full application configuration.
@@ -61,12 +69,18 @@ func defaults() Config {
 		PortMax:       8999,
 		CatalogTTL:    5 * time.Minute,
 		Images: Images{
-			LlamaCPP:    "ghcr.io/ggml-org/llama.cpp:server",
-			LlamaCPPGPU: "ghcr.io/ggml-org/llama.cpp:server-cuda",
-			VLLM:        "docker.io/vllm/vllm-openai:latest",
-			Ollama:      "docker.io/ollama/ollama:latest",
-			Indexer:     "docker.io/library/alpine:3.20",
-			HFDownload:  "docker.io/library/python:3.12-slim",
+			LlamaCPP:      "ghcr.io/ggml-org/llama.cpp:server",
+			LlamaCPPCUDA:  "ghcr.io/ggml-org/llama.cpp:server-cuda",
+			LlamaCPPROCm:  "ghcr.io/ggml-org/llama.cpp:server-rocm",
+			LlamaCPPIntel: "ghcr.io/ggml-org/llama.cpp:server-intel",
+			VLLM:          "docker.io/vllm/vllm-openai:latest",
+			VLLMROCm:      "docker.io/rocm/vllm:latest",
+			VLLMIntel:     "", // no well-known default; set IMAGE_VLLM_INTEL
+			Ollama:        "docker.io/ollama/ollama:latest",
+			OllamaROCm:    "docker.io/ollama/ollama:rocm",
+			OllamaIntel:   "", // no well-known default; set IMAGE_OLLAMA_INTEL
+			Indexer:       "docker.io/library/alpine:3.20",
+			HFDownload:    "docker.io/library/python:3.12-slim",
 		},
 	}
 }
@@ -99,9 +113,15 @@ func Load() (Config, error) {
 	intVar(&cfg.PortMax, "PORT_MAX")
 	durVar(&cfg.CatalogTTL, "CATALOG_TTL")
 	strVar(&cfg.Images.LlamaCPP, "IMAGE_LLAMACPP")
-	strVar(&cfg.Images.LlamaCPPGPU, "IMAGE_LLAMACPP_GPU")
+	strVar(&cfg.Images.LlamaCPPCUDA, "IMAGE_LLAMACPP_CUDA")
+	strVar(&cfg.Images.LlamaCPPROCm, "IMAGE_LLAMACPP_ROCM")
+	strVar(&cfg.Images.LlamaCPPIntel, "IMAGE_LLAMACPP_INTEL")
 	strVar(&cfg.Images.VLLM, "IMAGE_VLLM")
+	strVar(&cfg.Images.VLLMROCm, "IMAGE_VLLM_ROCM")
+	strVar(&cfg.Images.VLLMIntel, "IMAGE_VLLM_INTEL")
 	strVar(&cfg.Images.Ollama, "IMAGE_OLLAMA")
+	strVar(&cfg.Images.OllamaROCm, "IMAGE_OLLAMA_ROCM")
+	strVar(&cfg.Images.OllamaIntel, "IMAGE_OLLAMA_INTEL")
 	strVar(&cfg.Images.Indexer, "IMAGE_INDEXER")
 	strVar(&cfg.Images.HFDownload, "IMAGE_HFDOWNLOAD")
 

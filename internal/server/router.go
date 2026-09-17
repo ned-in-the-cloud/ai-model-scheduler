@@ -19,6 +19,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/deployments/{name}/logs", s.apiDeploymentLogs)
 	mux.HandleFunc("GET /api/v1/stats/node", s.apiNodeStats)
 	mux.HandleFunc("GET /api/v1/stats/allocations/{id}", s.apiAllocStats)
+	mux.HandleFunc("GET /api/v1/hardware/gpus", s.apiListGPUs)
+	mux.HandleFunc("POST /api/v1/hardware/refresh", s.apiRefreshGPUs)
 	mux.HandleFunc("GET /api/v1/models", s.apiListModels)
 	mux.HandleFunc("POST /api/v1/models/refresh", s.apiRefreshModels)
 	mux.HandleFunc("GET /api/v1/downloads", s.apiListDownloads)
@@ -37,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /downloads", s.uiDownloads)
 	mux.HandleFunc("POST /downloads", s.uiStartDownload)
 	mux.HandleFunc("DELETE /downloads/{id...}", s.uiRemoveDownload)
+	mux.HandleFunc("POST /hardware/refresh", s.uiRescanGPUs)
 
 	// htmx fragments
 	mux.HandleFunc("GET /partials/health", s.partialHealth)
@@ -46,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /partials/models", s.partialModels)
 	mux.HandleFunc("GET /partials/downloads", s.partialDownloads)
 	mux.HandleFunc("GET /partials/download-logs", s.partialDownloadLogs)
+	mux.HandleFunc("GET /partials/gpus", s.partialGPUs)
 
 	// static assets
 	mux.Handle("GET /static/", http.FileServerFS(web.FS))

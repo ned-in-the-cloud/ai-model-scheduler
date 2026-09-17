@@ -97,21 +97,7 @@ func (c *Catalog) Refresh(ctx context.Context) error {
 	}
 	stdout, logErr := c.nomad.ReadAllLogs(res.AllocID, nomadapi.TaskName, "stdout")
 	if res.ClientStatus != "complete" {
-		stderr, _ := c.nomad.TailLogs(res.AllocID, nomadapi.TaskName, "stderr", 4*1024)
-		reason := strings.TrimSpace(stderr)
-		if reason == "" {
-			// Task never produced output; the alloc events say why.
-			if events, err := c.nomad.AllocEvents(res.AllocID); err == nil && len(events) > 0 {
-				reason = events[len(events)-1].Message
-				for _, ev := range events {
-					if ev.Type == "Driver Failure" || ev.Type == "Failed Validation" {
-						reason = ev.Message
-						break
-					}
-				}
-			}
-		}
-		return fmt.Errorf("indexer job failed: %s", reason)
+		return fmt.Errorf("indexer job failed: %s", c.nomad.BatchFailureReason(res.AllocID))
 	}
 	if logErr != nil && stdout == "" {
 		return fmt.Errorf("reading indexer output: %w", logErr)

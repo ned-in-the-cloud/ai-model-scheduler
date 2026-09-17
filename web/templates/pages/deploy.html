@@ -25,8 +25,12 @@
     <label>Port
       <input name="port" type="number" value="{{if .Params.Port}}{{.Params.Port}}{{else}}{{.SuggestedPort}}{{end}}">
     </label>
-    <label>
-      <span><input type="checkbox" name="gpu" {{if .Params.GPU}}checked{{end}}> Use GPU</span>
+    <label>GPU
+      <div class="gpu-select"
+           hx-get="/partials/gpus?gpu={{.Params.GPU}}" hx-trigger="load" hx-swap="innerHTML">
+        <select name="gpu"><option value="">None (CPU)</option></select>
+        <span class="muted">Detecting GPUs…</span>
+      </div>
     </label>
     <label>Context size <span class="muted">(tokens, optional)</span>
       <input name="ctx_size" type="number" value="{{if .Params.CtxSize}}{{.Params.CtxSize}}{{end}}">

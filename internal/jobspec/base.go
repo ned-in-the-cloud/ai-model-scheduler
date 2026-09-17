@@ -37,7 +37,7 @@ type Params struct {
 	Runtime   string `json:"runtime"` // llamacpp | vllm | ollama
 	Model     string `json:"model"`   // path relative to the model root
 	Port      int    `json:"port"`
-	GPU       bool   `json:"gpu"`
+	GPU       string `json:"gpu"` // GPU vendor: "" (CPU) | nvidia | amd | intel
 	CtxSize   int    `json:"ctx_size,omitempty"`
 	ExtraArgs string `json:"extra_args,omitempty"` // whitespace-separated extra CLI args
 	CPUMHz    int    `json:"cpu_mhz,omitempty"`
@@ -56,6 +56,11 @@ func (p Params) Validate() error {
 	default:
 		return fmt.Errorf("unknown runtime %q", p.Runtime)
 	}
+	switch p.GPU {
+	case "", "nvidia", "amd", "intel":
+	default:
+		return fmt.Errorf("unknown gpu vendor %q (want nvidia, amd, intel, or empty for CPU)", p.GPU)
+	}
 	if p.Runtime != "ollama" && p.Model == "" {
 		return fmt.Errorf("model is required")
 	}
@@ -69,13 +74,42 @@ func Build(p Params, env Env) (*api.Job, error) {
 	}
 	switch p.Runtime {
 	case "llamacpp":
-		return llamaCPP(p, env), nil
+		return llamaCPP(p, env)
 	case "vllm":
-		return vLLM(p, env), nil
+		return vLLM(p, env)
 	case "ollama":
-		return ollama(p, env), nil
+		return ollama(p, env)
 	}
 	return nil, fmt.Errorf("unknown runtime %q", p.Runtime)
+}
+
+// runtimeImage resolves the container image for a runtime and GPU vendor.
+// A missing map key or empty value means the combination has no configured
+// image; the error tells the user which override to set.
+func runtimeImage(runtime, gpu string, byVendor map[string]string) (string, error) {
+	if image := byVendor[gpu]; image != "" {
+		return image, nil
+	}
+	label := gpu
+	if label == "" {
+		label = "CPU"
+	}
+	return "", fmt.Errorf("no %s image configured for %s; set the matching IMAGE_* variable", runtime, label)
+}
+
+// gpuDevices returns the podman/docker device passthrough for a GPU vendor:
+// NVIDIA via its CDI spec, AMD ROCm via the kernel compute + DRM nodes,
+// Intel via the DRM nodes.
+func gpuDevices(vendor string) []string {
+	switch vendor {
+	case "nvidia":
+		return []string{"nvidia.com/gpu=all"}
+	case "amd":
+		return []string{"/dev/kfd", "/dev/dri"}
+	case "intel":
+		return []string{"/dev/dri"}
+	}
+	return nil
 }
 
 // baseJob builds the shared service-job scaffolding: one group, one task,
@@ -107,8 +141,8 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 			MemoryMB: ptr(mem),
 		},
 	}
-	if p.GPU {
-		task.Config["devices"] = []string{"nvidia.com/gpu=all"}
+	if devices := gpuDevices(p.GPU); devices != nil {
+		task.Config["devices"] = devices
 	}
 
 	group := &api.TaskGroup{
@@ -135,7 +169,7 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 			nomadapi.KindKey:      nomadapi.KindInference,
 			nomadapi.RuntimeKey:   p.Runtime,
 			nomadapi.ModelKey:     p.Model,
-			nomadapi.GPUKey:       fmt.Sprintf("%t", p.GPU),
+			nomadapi.GPUKey:       p.GPU,
 		},
 	}
 }

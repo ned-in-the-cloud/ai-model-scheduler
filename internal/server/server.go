@@ -18,6 +18,7 @@ import (
 	"ai-model-scheduler/internal/config"
 	"ai-model-scheduler/internal/deploy"
 	"ai-model-scheduler/internal/downloads"
+	"ai-model-scheduler/internal/hardware"
 	"ai-model-scheduler/internal/nomadapi"
 	"ai-model-scheduler/web"
 )
@@ -29,6 +30,7 @@ type Server struct {
 	deploy    *deploy.Service
 	catalog   *catalog.Catalog
 	downloads *downloads.Service
+	hardware  *hardware.Service
 	log       *slog.Logger
 	pages    map[string]*template.Template
 	partials *template.Template
@@ -41,7 +43,8 @@ func New(cfg config.Config, nomad *nomadapi.Client, log *slog.Logger) (*Server, 
 		cfg:     cfg,
 		nomad:   nomad,
 		deploy:  deploy.New(nomad, cfg),
-		catalog: cat,
+		catalog:  cat,
+		hardware: hardware.New(nomad, cfg, log),
 		downloads: downloads.New(nomad, cfg, log, func() {
 			if err := cat.Refresh(context.Background()); err != nil {
 				log.Warn("catalog refresh after download", "err", err)

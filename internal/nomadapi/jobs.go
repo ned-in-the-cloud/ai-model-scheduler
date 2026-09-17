@@ -37,7 +37,7 @@ type Deployment struct {
 	Healthy     bool   `json:"healthy"`
 	Endpoint    string `json:"endpoint,omitempty"` // host:port once allocated
 	Port        int    `json:"port,omitempty"`
-	GPU         bool   `json:"gpu"`
+	GPU         string `json:"gpu,omitempty"` // vendor: nvidia | amd | intel; empty = CPU
 	CPUMHz      int    `json:"cpu_mhz,omitempty"`
 	MemMB       int    `json:"mem_mb,omitempty"`
 
@@ -66,13 +66,20 @@ func (c *Client) ListManaged() ([]Deployment, error) {
 		if job.Meta[ManagedByKey] != ManagedByValue || job.Meta[KindKey] != KindInference {
 			continue
 		}
+		gpu := job.Meta[GPUKey]
+		switch gpu {
+		case "true": // legacy boolean meta from before vendor selection; was CUDA-only
+			gpu = "nvidia"
+		case "false":
+			gpu = ""
+		}
 		d := Deployment{
 			JobID:   stub.ID,
 			Name:    strings.TrimPrefix(stub.ID, JobPrefix),
 			Runtime: job.Meta[RuntimeKey],
 			Model:   job.Meta[ModelKey],
 			Status:  stub.Status,
-			GPU:     job.Meta[GPUKey] == "true",
+			GPU:     gpu,
 		}
 		if res := taskResources(job); res != nil {
 			if res.CPU != nil {

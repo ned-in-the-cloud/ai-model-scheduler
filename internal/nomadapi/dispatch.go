@@ -3,6 +3,7 @@ package nomadapi
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -22,6 +23,26 @@ func (c *Client) Dispatch(jobID string, meta map[string]string) (string, error) 
 type BatchResult struct {
 	AllocID      string
 	ClientStatus string // complete | failed
+}
+
+// BatchFailureReason returns the most useful explanation for a failed batch
+// allocation: the stderr tail if the task produced any, otherwise the most
+// telling task lifecycle event.
+func (c *Client) BatchFailureReason(allocID string) string {
+	stderr, _ := c.TailLogs(allocID, TaskName, "stderr", 4*1024)
+	if reason := strings.TrimSpace(stderr); reason != "" {
+		return reason
+	}
+	events, err := c.AllocEvents(allocID)
+	if err != nil || len(events) == 0 {
+		return "no output"
+	}
+	for _, ev := range events {
+		if ev.Type == "Driver Failure" || ev.Type == "Failed Validation" {
+			return ev.Message
+		}
+	}
+	return events[len(events)-1].Message
 }
 
 // WaitForBatch polls a dispatched batch job until its allocation reaches a

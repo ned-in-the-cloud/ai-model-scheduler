@@ -55,7 +55,7 @@ func (s *Server) uiDeploySubmit(w http.ResponseWriter, r *http.Request) {
 		Runtime:   r.FormValue("runtime"),
 		Model:     r.FormValue("model"),
 		Port:      formInt(r, "port"),
-		GPU:       r.FormValue("gpu") == "on",
+		GPU:       r.FormValue("gpu"),
 		CtxSize:   formInt(r, "ctx_size"),
 		ExtraArgs: r.FormValue("extra_args"),
 		CPUMHz:    formInt(r, "cpu_mhz"),

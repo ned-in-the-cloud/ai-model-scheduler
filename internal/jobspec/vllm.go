@@ -1,6 +1,7 @@
 package jobspec
 
 import (
+	"fmt"
 	"path"
 	"strconv"
 	"strings"
@@ -9,8 +10,20 @@ import (
 )
 
 // vLLM builds a vLLM OpenAI-compatible server job serving a Hugging Face
-// model directory from the model share. vLLM requires a GPU in practice.
-func vLLM(p Params, env Env) *api.Job {
+// model directory from the model share. vLLM requires a GPU.
+func vLLM(p Params, env Env) (*api.Job, error) {
+	if p.GPU == "" {
+		return nil, fmt.Errorf("vllm requires a GPU; select one on the deploy form")
+	}
+	image, err := runtimeImage("vLLM", p.GPU, map[string]string{
+		"nvidia": env.Images.VLLM,
+		"amd":    env.Images.VLLMROCm,
+		"intel":  env.Images.VLLMIntel,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	args := []string{
 		"--model", path.Join(env.ModelMount, p.Model),
 		"--host", "0.0.0.0",
@@ -24,7 +37,7 @@ func vLLM(p Params, env Env) *api.Job {
 		args = append(args, extra...)
 	}
 
-	job := baseJob(p, env, env.Images.VLLM, args)
+	job := baseJob(p, env, image, args)
 
 	// vLLM needs a large /dev/shm for tensor-parallel workers. The docker
 	// driver takes bytes; the podman driver takes a size string.
@@ -34,5 +47,5 @@ func vLLM(p Params, env Env) *api.Job {
 	} else {
 		task.Config["shm_size"] = "8g"
 	}
-	return job
+	return job, nil
 }

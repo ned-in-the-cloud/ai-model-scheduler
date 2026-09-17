@@ -1,0 +1,16 @@
+# Run the scheduler UI on your Windows box or a Raspberry Pi.
+#   docker compose -f deploy/compose.example.yml up -d
+services:
+  scheduler:
+    image: ai-model-scheduler:latest
+    ports:
+      - "8080:8080"
+    environment:
+      NOMAD_ADDR: "http://192.168.1.50:4646"   # your remote box
+      # NOMAD_TOKEN: ""                        # if ACLs are enabled
+      MODEL_ROOT_HOST: "/mnt/models"           # NAS mount on the remote box
+      NOMAD_DRIVER: "podman"
+      # HF_TOKEN: "hf_..."                     # for gated/private HF repos
+      # BASIC_AUTH_USER: "ned"
+      # BASIC_AUTH_PASS: "change-me"
+    restart: unless-stopped

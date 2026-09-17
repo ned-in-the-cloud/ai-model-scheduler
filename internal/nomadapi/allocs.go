@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/nomad/api"
 )
@@ -29,6 +30,39 @@ func (c *Client) LatestAlloc(jobID string) (*api.Allocation, error) {
 		return nil, fmt.Errorf("fetching allocation %s: %w", latest.ID, err)
 	}
 	return alloc, nil
+}
+
+// AllocEvent is one task lifecycle event, for surfacing failure reasons.
+type AllocEvent struct {
+	Time    time.Time `json:"time"`
+	Type    string    `json:"type"`
+	Message string    `json:"message"`
+}
+
+// AllocEvents returns the task's lifecycle events for an allocation, oldest
+// first.
+func (c *Client) AllocEvents(allocID string) ([]AllocEvent, error) {
+	alloc, _, err := c.c.Allocations().Info(allocID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching allocation %s: %w", allocID, err)
+	}
+	state, ok := alloc.TaskStates[TaskName]
+	if !ok {
+		return nil, nil
+	}
+	events := make([]AllocEvent, 0, len(state.Events))
+	for _, ev := range state.Events {
+		msg := ev.DisplayMessage
+		if msg == "" {
+			msg = ev.Message
+		}
+		events = append(events, AllocEvent{
+			Time:    time.Unix(0, ev.Time),
+			Type:    ev.Type,
+			Message: msg,
+		})
+	}
+	return events, nil
 }
 
 // allocEndpoint extracts the host endpoint (ip:port) for the PortLabel port

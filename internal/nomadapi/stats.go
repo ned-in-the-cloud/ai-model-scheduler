@@ -14,8 +14,9 @@ type NodeStats struct {
 	MemUsed    int64         `json:"mem_used_bytes"`
 	MemTotal   int64         `json:"mem_total_bytes"`
 	MemPercent float64       `json:"mem_percent"`
-	Uptime     time.Duration `json:"uptime_seconds"`
-	GPUs       []string      `json:"gpus,omitempty"` // e.g. "nvidia/gpu/RTX 4090 ×1"
+	Uptime     time.Duration `json:"-"` // human form for templates
+	UptimeSecs int64         `json:"uptime_seconds"`
+	GPUs       []string      `json:"gpus,omitempty"` // e.g. "RTX 4090 ×1"
 }
 
 // AllocUsage is a point-in-time resource usage sample for one allocation.
@@ -75,6 +76,7 @@ func (c *Client) NodeStats() ([]NodeStats, error) {
 					}
 				}
 				ns.Uptime = time.Duration(hs.Uptime) * time.Second
+				ns.UptimeSecs = int64(hs.Uptime)
 			}
 			if info, _, err := c.c.Nodes().Info(n.ID, nil); err == nil && info.NodeResources != nil {
 				for _, dev := range info.NodeResources.Devices {

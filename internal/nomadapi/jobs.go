@@ -54,7 +54,7 @@ func (c *Client) ListManaged() ([]Deployment, error) {
 		return nil, fmt.Errorf("listing jobs: %w", err)
 	}
 
-	var out []Deployment
+	out := []Deployment{}
 	for _, stub := range stubs {
 		if !strings.HasPrefix(stub.ID, JobPrefix) {
 			continue

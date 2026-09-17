@@ -62,9 +62,25 @@ func (s *Server) apiCreateDeployment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"name": p.Name})
 }
 
+// deploymentDetail augments a Deployment with its task lifecycle events.
+type deploymentDetail struct {
+	nomadapi.Deployment
+	Events []nomadapi.AllocEvent `json:"events,omitempty"`
+}
+
+func (s *Server) deploymentDetail(d nomadapi.Deployment) deploymentDetail {
+	detail := deploymentDetail{Deployment: d}
+	if d.AllocID != "" {
+		if events, err := s.nomad.AllocEvents(d.AllocID); err == nil {
+			detail.Events = events
+		}
+	}
+	return detail
+}
+
 func (s *Server) apiGetDeployment(w http.ResponseWriter, r *http.Request) {
 	if d, ok := s.findDeployment(w, r.PathValue("name")); ok {
-		writeJSON(w, http.StatusOK, d)
+		writeJSON(w, http.StatusOK, s.deploymentDetail(d))
 	}
 }
 

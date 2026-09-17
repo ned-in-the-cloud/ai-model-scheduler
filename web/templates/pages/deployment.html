@@ -13,6 +13,24 @@
   </table>
 </section>
 
+{{if .Events}}
+<h2>Task events</h2>
+<section class="card">
+  <table>
+    <thead><tr><th>Time</th><th>Type</th><th>Message</th></tr></thead>
+    <tbody>
+      {{range .Events}}
+      <tr>
+        <td class="muted">{{.Time.Format "15:04:05"}}</td>
+        <td>{{.Type}}</td>
+        <td>{{.Message}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
 <h2>Logs (stderr)</h2>
 <section id="logs" hx-get="/partials/logs?name={{.Name}}&stream=stderr"
          hx-trigger="load, every 3s">

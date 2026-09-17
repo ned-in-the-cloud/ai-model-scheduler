@@ -2,11 +2,20 @@ package jobspec
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/nomad/api"
 
 	"ai-model-scheduler/internal/nomadapi"
 )
+
+// escapeInterpolation escapes shell ${var} expansions so Nomad's HCL2
+// config parsing passes them through literally. Only the exact sequence ${
+// starts an HCL2 interpolation ($( and bare $NAME are left alone), and only
+// $${ is its escape form.
+func escapeInterpolation(script string) string {
+	return strings.ReplaceAll(script, "${", "$${")
+}
 
 // Helper job IDs. These are parameterized batch jobs the app self-registers
 // at startup and dispatches on demand. They run on the remote box, which has
@@ -38,7 +47,7 @@ done
 true`, env.ModelMount)
 
 	return helperJob(IndexerJobID, env, env.Images.Indexer,
-		[]string{"-c", script}, true /* read-only mount */, 200, 128)
+		[]string{"-c", escapeInterpolation(script)}, true /* read-only mount */, 200, 128)
 }
 
 // HFDownload builds the parameterized batch job that downloads a Hugging
@@ -48,7 +57,7 @@ true`, env.ModelMount)
 func HFDownload(env Env, hfToken string) *api.Job {
 	script := fmt.Sprintf(`set -e
 export PIP_ROOT_USER_ACTION=ignore
-pip install --quiet 'huggingface_hub[cli]>=0.34'
+pip install --quiet 'huggingface_hub>=0.34'
 echo "downloading $NOMAD_META_repo_id -> %[1]s/$NOMAD_META_dest"
 hf download "$NOMAD_META_repo_id" \
   ${NOMAD_META_revision:+--revision "$NOMAD_META_revision"} \
@@ -57,7 +66,7 @@ hf download "$NOMAD_META_repo_id" \
 echo "download complete"`, env.ModelMount)
 
 	job := helperJob(HFDownloadJobID, env, env.Images.HFDownload,
-		[]string{"-c", script}, false /* needs write access */, 500, 1024)
+		[]string{"-c", escapeInterpolation(script)}, false /* needs write access */, 500, 1024)
 	job.ParameterizedJob.MetaRequired = []string{"repo_id", "dest"}
 	job.ParameterizedJob.MetaOptional = []string{"revision", "include"}
 	if hfToken != "" {

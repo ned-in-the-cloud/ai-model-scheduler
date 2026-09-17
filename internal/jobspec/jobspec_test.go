@@ -218,6 +218,22 @@ func TestIndexerJob(t *testing.T) {
 			t.Errorf("indexer script missing %q", want)
 		}
 	}
+	assertInterpolationEscaped(t, script)
+	assertInterpolationEscaped(t, HFDownload(testEnv("podman"), "").
+		TaskGroups[0].Tasks[0].Config["args"].([]string)[1])
+}
+
+// assertInterpolationEscaped fails if the script contains a bare ${ that
+// Nomad's HCL2 config parsing would try to interpolate, or a $$ that is not
+// the $${ escape form (the shell would read it as its PID).
+func assertInterpolationEscaped(t *testing.T, script string) {
+	t.Helper()
+	if strings.Contains(strings.ReplaceAll(script, "$${", ""), "${") {
+		t.Errorf("script contains unescaped ${ (Nomad would interpolate it):\n%s", script)
+	}
+	if strings.Contains(strings.ReplaceAll(script, "$${", ""), "$$") {
+		t.Errorf("script contains $$ outside the $${ escape (shell PID expansion):\n%s", script)
+	}
 }
 
 // containsSeq reports whether want appears as a contiguous subsequence of got.

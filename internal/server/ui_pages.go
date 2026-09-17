@@ -77,7 +77,7 @@ func (s *Server) uiDeploymentDetail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.renderPage(w, "deployment", pageData{Title: d.Name, Active: "dashboard", Data: d})
+	s.renderPage(w, "deployment", pageData{Title: d.Name, Active: "dashboard", Data: s.deploymentDetail(d)})
 }
 
 // uiStopDeployment stops a deployment and returns the refreshed deployments

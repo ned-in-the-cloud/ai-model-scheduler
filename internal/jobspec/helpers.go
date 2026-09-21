@@ -110,13 +110,20 @@ func GPUStatsAgent(env Env, nvidia bool) *api.Job {
     busy=$(cat "$d/gpu_busy_percent" 2>/dev/null) || busy=-1
     vu=$(cat "$d/mem_info_vram_used" 2>/dev/null) || vu=0
     vt=$(cat "$d/mem_info_vram_total" 2>/dev/null) || vt=0
+    # hwmon reads can fail transiently (EBUSY while the card is power-gated),
+    # so validate the value before doing arithmetic: a bad expansion in dash
+    # kills the whole loop, not just this sample.
     temp=-1
     tf=$(ls "$d"/hwmon/hwmon*/temp1_input 2>/dev/null | head -n1)
-    [ -n "$tf" ] && temp=$(( $(cat "$tf") / 1000 ))
+    tv=""
+    [ -n "$tf" ] && tv=$(cat "$tf" 2>/dev/null)
+    case "$tv" in ''|*[!0-9]*) ;; *) temp=$((tv / 1000));; esac
     pw=-1
     pf=$(ls "$d"/hwmon/hwmon*/power1_average 2>/dev/null | head -n1)
     [ -z "$pf" ] && pf=$(ls "$d"/hwmon/hwmon*/power1_input 2>/dev/null | head -n1)
-    [ -n "$pf" ] && pw=$(( $(cat "$pf") / 1000000 ))
+    pv=""
+    [ -n "$pf" ] && pv=$(cat "$pf" 2>/dev/null)
+    case "$pv" in ''|*[!0-9]*) ;; *) pw=$((pv / 1000000));; esac
     g=$(printf '{"vendor":"amd","pci":"%s","util_percent":%s,"vram_used_bytes":%s,"vram_total_bytes":%s,"temp_c":%s,"power_w":%s}' "$pci" "$busy" "$vu" "$vt" "$temp" "$pw")
     gpus="${gpus:+$gpus,}$g"
   done

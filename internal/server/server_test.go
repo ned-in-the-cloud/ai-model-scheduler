@@ -41,6 +41,7 @@ func newTestServer(t *testing.T, nomadURL string, mutate func(*config.Config)) *
 		ListenAddr: ":0",
 		PortMin:    8000,
 		PortMax:    8999,
+		DataDir:    t.TempDir(),
 		Images: config.Images{
 			LlamaCPP:     "img/llamacpp",
 			LlamaCPPCUDA: "img/llamacpp-cuda",

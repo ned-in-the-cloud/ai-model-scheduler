@@ -1,0 +1,10 @@
+{{define "content"}}
+{{with .Data}}
+<h1>Benchmark run <span class="muted" style="font-size:0.9rem">{{.Run.ID}}</span></h1>
+<p class="muted">Suite <a href="/benchmarks/suites/{{.Run.SuiteID}}">{{.Run.SuiteName}}</a> · started {{.Run.StartedAt.Format "Jan 2 15:04"}}</p>
+<div id="bench-run" hx-get="/partials/bench-run?id={{.Run.ID}}"
+     {{if .Run.Active}}hx-trigger="every 5s"{{end}} hx-swap="innerHTML">
+  {{template "partial:bench-run" .}}
+</div>
+{{end}}
+{{end}}

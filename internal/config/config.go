@@ -29,6 +29,7 @@ type Images struct {
 	Indexer       string `yaml:"indexer"`
 	HFDownload    string `yaml:"hf_download"`
 	GPUStats      string `yaml:"gpu_stats"`
+	Bench         string `yaml:"bench"`
 }
 
 // Config is the full application configuration.
@@ -61,20 +62,24 @@ type Config struct {
 
 	CatalogTTL time.Duration `yaml:"catalog_ttl"`
 
+	// DataDir holds app-local state: benchmark suites, datasets, and results.
+	DataDir string `yaml:"data_dir"`
+
 	Images Images `yaml:"images"`
 }
 
 func defaults() Config {
 	return Config{
-		NomadAddr:     "http://127.0.0.1:4646",
-		ModelRootHost: "/mnt/models",
-		ModelMount:    "/models",
+		NomadAddr:        "http://127.0.0.1:4646",
+		ModelRootHost:    "/mnt/models",
+		ModelMount:       "/models",
 		Driver:           "podman",
 		ImagePullTimeout: "45m",
 		ListenAddr:       ":8080",
-		PortMin:       8000,
-		PortMax:       8999,
-		CatalogTTL:    5 * time.Minute,
+		PortMin:          8000,
+		PortMax:          8999,
+		CatalogTTL:       5 * time.Minute,
+		DataDir:          "data",
 		Images: Images{
 			LlamaCPP:      "ghcr.io/ggml-org/llama.cpp:server",
 			LlamaCPPCUDA:  "ghcr.io/ggml-org/llama.cpp:server-cuda",
@@ -90,6 +95,8 @@ func defaults() Config {
 			HFDownload:    "docker.io/library/python:3.12-slim",
 			// glibc-based: the CDI-injected nvidia-smi binary won't run on musl.
 			GPUStats: "docker.io/library/debian:bookworm-slim",
+			// Load generator + lm-eval-harness; built from bench/ in this repo.
+			Bench: "ghcr.io/ned-in-the-cloud/ai-model-scheduler-bench:latest",
 		},
 	}
 }
@@ -135,6 +142,8 @@ func Load() (Config, error) {
 	strVar(&cfg.Images.Indexer, "IMAGE_INDEXER")
 	strVar(&cfg.Images.HFDownload, "IMAGE_HFDOWNLOAD")
 	strVar(&cfg.Images.GPUStats, "IMAGE_GPUSTATS")
+	strVar(&cfg.Images.Bench, "IMAGE_BENCH")
+	strVar(&cfg.DataDir, "DATA_DIR")
 
 	return cfg, cfg.validate()
 }

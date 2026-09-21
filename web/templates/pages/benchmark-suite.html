@@ -1,0 +1,106 @@
+{{define "content"}}
+{{with .Data}}
+<h1>{{.Suite.Name}} <span class="muted" style="font-size:0.9rem">suite</span></h1>
+{{if .Error}}<section class="card error-card">{{.Error}}</section>{{end}}
+
+<h2>Configurations</h2>
+<section class="card">
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Label</th><th>Runtime</th><th>Model</th><th>Context</th><th>Extra args</th><th>Env</th><th>Resources</th><th></th></tr></thead>
+    <tbody>
+      {{$id := .Suite.ID}}
+      {{range $i, $c := .Suite.Configs}}
+      <tr>
+        <td><strong>{{$c.Label}}</strong></td>
+        <td>{{$c.Runtime}}{{if $c.GPU}} <span class="badge muted">{{$c.GPU}}</span>{{end}}</td>
+        <td class="muted">{{$c.Model}}</td>
+        <td class="muted">{{if $c.CtxSize}}{{$c.CtxSize}}{{else}}default{{end}}{{if $c.Threads}} · {{$c.Threads}} thr{{end}}{{if $c.GPULayers}} · {{$c.GPULayers}} layers{{end}}</td>
+        <td class="muted"><code>{{$c.ExtraArgs}}</code></td>
+        <td class="muted">{{envLines $c.Env}}</td>
+        <td class="muted">{{if $c.CPUMHz}}{{$c.CPUMHz}} MHz{{end}}{{if $c.MemMB}} · {{$c.MemMB}} MB{{end}}</td>
+        <td><button class="danger" hx-delete="/benchmarks/suites/{{$id}}/configs/{{$i}}" hx-confirm="Remove {{$c.Label}} from the suite?">Remove</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <details style="margin-top:0.75rem">
+    <summary>Add a configuration</summary>
+    <form class="stack" method="post" action="/benchmarks/suites/{{.Suite.ID}}/configs" style="margin-top:0.75rem">
+      {{template "bench-config-fields" .}}
+      <div><button type="submit">Add config</button></div>
+    </form>
+  </details>
+  <details style="margin-top:0.5rem">
+    <summary>Suite as YAML</summary>
+    <pre class="logs">{{.YAML}}</pre>
+  </details>
+</section>
+
+<h2>Start a run</h2>
+<section class="card">
+  <form class="stack wide" method="post" action="/benchmarks/runs">
+    <input type="hidden" name="suite_id" value="{{.Suite.ID}}">
+    <div class="two-col">
+      <div class="stack" style="display:grid;gap:0.75rem">
+        <strong>Performance</strong>
+        <label>Concurrency levels <span class="muted">(comma-separated; each level sends requests in parallel)</span>
+          <input name="concurrency" value="{{joinInts .Defaults.Concurrency}}"></label>
+        <label>Requests per level <span class="muted">(also the single-stream sample count)</span>
+          <input name="prompts" type="number" value="{{.Defaults.Prompts}}"></label>
+        <label>Max tokens per response
+          <input name="max_tokens" type="number" value="{{.Defaults.MaxTokens}}"></label>
+        <label>Ready timeout (seconds) <span class="muted">(deploy + image pull + model load)</span>
+          <input name="ready_timeout_sec" type="number" value="{{.Defaults.ReadyTimeoutSec}}"></label>
+      </div>
+      <div class="stack" style="display:grid;gap:0.75rem">
+        <strong>Accuracy</strong>
+        <div class="check-list">
+          <label><input type="radio" name="accuracy" value="none" checked> Performance only</label>
+          <label><input type="radio" name="accuracy" value="jsonl"> JSONL dataset (normalized exact match)</label>
+          <label><input type="radio" name="accuracy" value="lmeval"> lm-eval-harness tasks</label>
+        </div>
+        <label>Dataset
+          <select name="dataset_id">
+            <option value="">— choose an uploaded dataset —</option>
+            {{range .Datasets}}<option value="{{.ID}}">{{.Name}} ({{.Rows}} rows)</option>{{end}}
+          </select>
+        </label>
+        <label>…or a JSONL path on the model share <span class="muted">(relative to the model root; overrides the picker)</span>
+          <input name="dataset_path" placeholder="_benchmarks/my-eval.jsonl"></label>
+        <span class="muted">Harness tasks:</span>
+        <div class="check-list">
+          {{range .Tasks}}<label><input type="checkbox" name="tasks" value="{{.Name}}"> <code>{{.Name}}</code> <span class="muted">{{.Description}}</span></label>{{end}}
+        </div>
+        <label>Other harness tasks <span class="muted">(comma-separated; must work with chat completions)</span>
+          <input name="extra_tasks"></label>
+        <label>Samples per task <span class="muted">(0 = full dataset; runs can take hours)</span>
+          <input name="limit" type="number" value="{{.Defaults.Limit}}"></label>
+      </div>
+    </div>
+    <p class="muted">Starting a run stops every running model deployment and relaunches them when the run finishes.</p>
+    <div><button type="submit">Start benchmark run</button></div>
+  </form>
+</section>
+
+<h2>Runs of this suite</h2>
+<section class="card">
+  {{if .Runs}}
+  <table>
+    <thead><tr><th>Run</th><th>Started</th><th>Status</th><th>Configs</th></tr></thead>
+    <tbody>
+      {{range .Runs}}
+      <tr>
+        <td><a href="/benchmarks/runs/{{.ID}}">{{.ID}}</a></td>
+        <td class="muted">{{.StartedAt.Format "Jan 2 15:04"}}</td>
+        <td>{{template "bench-status" .Status}}</td>
+        <td class="muted">{{len .Results}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No runs yet.</p>{{end}}
+</section>
+{{end}}
+{{end}}

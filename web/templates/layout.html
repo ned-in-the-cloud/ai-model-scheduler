@@ -16,6 +16,7 @@
       <a href="/deploy" {{if eq .Active "deploy"}}class="active"{{end}}>Deploy</a>
       <a href="/models" {{if eq .Active "models"}}class="active"{{end}}>Models</a>
       <a href="/downloads" {{if eq .Active "downloads"}}class="active"{{end}}>Downloads</a>
+      <a href="/benchmarks" {{if eq .Active "benchmarks"}}class="active"{{end}}>Benchmarks</a>
     </nav>
     <div class="health" hx-get="/partials/health" hx-trigger="load, every 10s"></div>
   </header>

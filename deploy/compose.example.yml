@@ -5,6 +5,8 @@ services:
     image: ai-model-scheduler:latest
     ports:
       - "8080:8080"
+    volumes:
+      - scheduler-data:/data                   # benchmark suites, datasets, results
     environment:
       NOMAD_ADDR: "http://192.168.1.50:4646"   # your remote box
       # NOMAD_TOKEN: ""                        # if ACLs are enabled
@@ -14,3 +16,6 @@ services:
       # BASIC_AUTH_USER: "ned"
       # BASIC_AUTH_PASS: "change-me"
     restart: unless-stopped
+
+volumes:
+  scheduler-data:

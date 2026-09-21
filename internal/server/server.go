@@ -12,50 +12,67 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"context"
 
+	"ai-model-scheduler/internal/bench"
 	"ai-model-scheduler/internal/catalog"
 	"ai-model-scheduler/internal/config"
 	"ai-model-scheduler/internal/deploy"
 	"ai-model-scheduler/internal/downloads"
 	"ai-model-scheduler/internal/hardware"
+	"ai-model-scheduler/internal/jobspec"
 	"ai-model-scheduler/internal/nomadapi"
 	"ai-model-scheduler/web"
 )
 
 // Server holds the application's HTTP handlers and their dependencies.
 type Server struct {
-	cfg      config.Config
-	nomad    *nomadapi.Client
-	deploy    *deploy.Service
-	catalog   *catalog.Catalog
-	downloads *downloads.Service
-	hardware  *hardware.Service
-	log       *slog.Logger
-	pages    map[string]*template.Template
-	partials *template.Template
+	cfg         config.Config
+	nomad       *nomadapi.Client
+	deploy      *deploy.Service
+	catalog     *catalog.Catalog
+	downloads   *downloads.Service
+	hardware    *hardware.Service
+	benchStore  *bench.Store
+	benchRunner *bench.Runner
+	log         *slog.Logger
+	pages       map[string]*template.Template
+	partials    *template.Template
 }
 
 // New builds a Server with all templates parsed.
 func New(cfg config.Config, nomad *nomadapi.Client, log *slog.Logger) (*Server, error) {
 	cat := catalog.New(nomad, cfg, log)
+	dep := deploy.New(nomad, cfg)
+	hw := hardware.New(nomad, cfg, log)
+	store, err := bench.NewStore(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	runner := bench.NewRunner(store, &bench.NomadCluster{Nomad: nomad, Deployer: dep, Hardware: hw},
+		jobspec.EnvFromConfig(cfg), log)
 	s := &Server{
-		cfg:     cfg,
-		nomad:   nomad,
-		deploy:  deploy.New(nomad, cfg),
+		cfg:      cfg,
+		nomad:    nomad,
+		deploy:   dep,
 		catalog:  cat,
-		hardware: hardware.New(nomad, cfg, log),
+		hardware: hw,
 		downloads: downloads.New(nomad, cfg, log, func() {
 			if err := cat.Refresh(context.Background()); err != nil {
 				log.Warn("catalog refresh after download", "err", err)
 			}
 		}),
-		log: log,
+		benchStore:  store,
+		benchRunner: runner,
+		log:         log,
 	}
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}
+	// Clean up after a run the previous process left in progress.
+	go runner.Recover()
 	return s, nil
 }
 
@@ -90,6 +107,37 @@ var templateFuncs = template.FuncMap{
 	"meterClass": meterClass,
 	"meterWidth": meterWidth,
 	"envLines":   envLines,
+	"joinInts":   joinInts,
+	"join":       strings.Join,
+	"duration":   humanDuration,
+}
+
+// joinInts renders a list of ints as "1, 4, 8" for form defaults.
+func joinInts(ns []int) string {
+	parts := make([]string, len(ns))
+	for i, n := range ns {
+		parts[i] = fmt.Sprint(n)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// humanDuration renders the span between two times as "12m 03s"; an unset
+// end means "so far".
+func humanDuration(start, end time.Time) string {
+	if start.IsZero() {
+		return ""
+	}
+	if end.IsZero() {
+		end = time.Now()
+	}
+	d := end.Sub(start).Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm %02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh %02dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
 // envLines renders an environment map as sorted KEY=VALUE lines for the

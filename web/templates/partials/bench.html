@@ -1,0 +1,132 @@
+{{define "bench-config-fields"}}
+<label>Label <span class="muted">(column name in comparisons)</span>
+  <input name="label" required maxlength="60" placeholder="fp16-8k"></label>
+<label>Runtime
+  <select name="runtime">
+    <option value="llamacpp">llama.cpp (GGUF)</option>
+    <option value="vllm">vLLM (HF directory, GPU)</option>
+    <option value="ollama">Ollama (server only)</option>
+  </select>
+</label>
+<label>Model path <span class="muted">(relative to the model share)</span>
+  <input name="model" list="model-list" placeholder="Qwen/Qwen2.5-7B-Instruct">
+  <datalist id="model-list">
+    {{range .Models}}<option value="{{.Path}}">{{if eq .Kind "gguf"}}GGUF{{else}}HF dir{{end}} · {{humanBytes .SizeBytes}}</option>{{end}}
+  </datalist>
+</label>
+<label>GPU
+  <div class="gpu-select" hx-get="/partials/gpus" hx-trigger="load" hx-swap="innerHTML">
+    <select name="gpu"><option value="">None (CPU)</option></select>
+    <span class="muted">Detecting GPUs…</span>
+  </div>
+</label>
+<label>Context size <span class="muted">(tokens; empty = model default)</span>
+  <input name="ctx_size" type="number"></label>
+<label>Threads <span class="muted">(llama.cpp only)</span> <input name="threads" type="number"></label>
+<label>GPU layers <span class="muted">(llama.cpp only; empty = all)</span> <input name="gpu_layers" type="number"></label>
+<label>Environment variables <span class="muted">(one KEY=VALUE per line)</span>
+  <textarea name="env" rows="2"></textarea></label>
+<label>Extra arguments
+  <input name="extra_args" placeholder="--gpu-memory-utilization 0.9 --max-num-seqs 8"></label>
+<div class="inline">
+  <label>CPU (MHz) <input name="cpu_mhz" type="number" placeholder="1000"></label>
+  <label>Memory (MB) <input name="mem_mb" type="number" placeholder="4096"></label>
+</div>
+{{end}}
+
+{{define "bench-status"}}{{if eq . "complete"}}<span class="badge ok">complete</span>{{else if eq . "running"}}<span class="badge warn">running</span>{{else if eq . "evaluating"}}<span class="badge warn">evaluating</span>{{else if eq . "deploying"}}<span class="badge warn">deploying</span>{{else if eq . "pending"}}<span class="badge muted">pending</span>{{else if eq . "skipped"}}<span class="badge muted">skipped</span>{{else}}<span class="badge err">{{.}}</span>{{end}}{{end}}
+
+{{define "partial:bench-runs"}}
+{{if .Runs}}
+<table>
+  <thead><tr><th>Run</th><th>Suite</th><th>Started</th><th>Duration</th><th>Status</th><th>Configs</th><th></th></tr></thead>
+  <tbody>
+    {{$active := .Active}}
+    {{range .Runs}}
+    <tr>
+      <td><a href="/benchmarks/runs/{{.ID}}">{{.ID}}</a></td>
+      <td class="muted">{{.SuiteName}}</td>
+      <td class="muted">{{.StartedAt.Format "Jan 2 15:04"}}</td>
+      <td class="muted">{{duration .StartedAt .FinishedAt}}</td>
+      <td>{{template "bench-status" .Status}}</td>
+      <td class="muted">{{len .Results}}</td>
+      <td>{{if ne .ID $active}}<button class="danger" hx-delete="/benchmarks/runs/{{.ID}}" hx-confirm="Delete this run and its results?">Delete</button>{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No runs yet.</p>{{end}}
+{{end}}
+
+{{define "partial:bench-run"}}
+{{if .Error}}<p class="badge err">{{.Error}}</p>{{else}}
+<section class="card">
+  <div class="inline">
+    {{template "bench-status" .Run.Status}}
+    <span class="muted">{{duration .Run.StartedAt .Run.FinishedAt}}</span>
+    <span class="muted">· accuracy: {{.Run.Eval.Accuracy}}{{if .Run.Eval.Tasks}} ({{join .Run.Eval.Tasks ", "}}{{if .Run.Eval.Limit}}, {{.Run.Eval.Limit}} samples{{end}}){{end}}</span>
+    <span class="muted">· concurrency {{joinInts .Run.Eval.Concurrency}} · {{.Run.Eval.Prompts}} req/level · {{.Run.Eval.MaxTokens}} tokens</span>
+    <span style="flex:1"></span>
+    {{if .Run.Active}}
+    <button class="danger" hx-post="/benchmarks/runs/{{.Run.ID}}/cancel" hx-confirm="Cancel this run? The current config is torn down and prior deployments relaunched." hx-target="#bench-run">Cancel run</button>
+    {{else}}
+    <a class="btn secondary" href="/api/v1/benchmarks/runs/{{.Run.ID}}/export/csv">Export CSV</a>
+    <a class="btn secondary" href="/api/v1/benchmarks/runs/{{.Run.ID}}/export/json">Export JSON</a>
+    {{end}}
+  </div>
+  {{if .Run.Error}}<p class="badge err" style="white-space:pre-wrap">{{.Run.Error}}</p>{{end}}
+  {{if .Run.Restore}}<p class="muted">Deployments stopped for this run{{if .Run.Restored}} and relaunched{{end}}: {{range $i, $p := .Run.Restore}}{{if $i}}, {{end}}<code>{{$p.Name}}</code>{{end}}</p>{{end}}
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">Progress</h2>
+  <table>
+    <thead><tr><th>#</th><th>Config</th><th>Status</th><th>Detail</th><th>Duration</th></tr></thead>
+    <tbody>
+      {{range .Run.Results}}
+      <tr>
+        <td class="muted">{{.Index}}</td>
+        <td><strong>{{.Label}}</strong><br><span class="muted">{{.Config.Runtime}}{{if .Config.GPU}}/{{.Config.GPU}}{{end}} · {{.Config.Model}}{{if .Config.ExtraArgs}} · <code>{{.Config.ExtraArgs}}</code>{{end}}</span></td>
+        <td>{{template "bench-status" .Status}}</td>
+        <td class="muted" style="max-width:28rem">{{if .Error}}<span class="col-error">{{.Error}}</span>{{else if .Progress}}{{.Progress}}{{else if .Metrics}}{{if .Metrics.Errors}}<span class="col-error">{{len .Metrics.Errors}} request error(s); see JSON export</span>{{else}}ok{{end}}{{end}}</td>
+        <td class="muted">{{duration .StartedAt .FinishedAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+{{if .Table.Rows}}
+<section class="card">
+  <h2 style="margin-top:0">Comparison</h2>
+  <div class="table-scroll">
+  <table class="compare">
+    <thead><tr><th>Metric</th>{{range .Table.Columns}}<th class="col-head">{{.Label}}</th>{{end}}</tr></thead>
+    <tbody>
+      {{range .Table.Rows}}
+      <tr><td class="metric">{{.Name}}</td>{{range .Cells}}<td class="num{{if .Best}} best{{end}}">{{.Text}}</td>{{end}}</tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Best value per row in green. Throughput and accuracy: higher is better; startup, latency, and VRAM: lower is better.</p>
+</section>
+{{end}}
+
+{{range .Run.Results}}{{if and .Metrics .Metrics.Accuracy}}{{if .Metrics.Accuracy.Samples}}
+<details class="card">
+  <summary>Prompt-level results: {{.Label}} ({{.Metrics.Accuracy.Correct}}/{{.Metrics.Accuracy.Total}} correct)</summary>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Prompt</th><th>Expected</th><th>Response</th><th></th></tr></thead>
+    <tbody>
+      {{range .Metrics.Accuracy.Samples}}
+      <tr><td class="muted">{{.Prompt}}</td><td>{{.Expected}}</td><td>{{.Response}}</td><td>{{if .Correct}}<span class="badge ok">✓</span>{{else}}<span class="badge err">✗</span>{{end}}</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</details>
+{{end}}{{end}}{{end}}
+{{end}}
+{{end}}

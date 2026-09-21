@@ -1,0 +1,100 @@
+{{define "content"}}
+<h1>Benchmarks</h1>
+<p class="muted">Compare model configurations: each config in a suite is deployed in turn, measured by an eval job on the box, then torn down. Other running models are stopped for the duration and relaunched afterwards.</p>
+
+{{with .Data}}
+{{if .Error}}<section class="card error-card">{{.Error}}</section>{{end}}
+
+<h2>Suites</h2>
+<section class="card">
+  {{if .Suites}}
+  <table>
+    <thead><tr><th>Name</th><th>Configs</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+      {{range .Suites}}
+      <tr>
+        <td><a href="/benchmarks/suites/{{.ID}}">{{.Name}}</a></td>
+        <td class="muted">{{len .Configs}}</td>
+        <td class="muted">{{.UpdatedAt.Format "Jan 2 15:04"}}</td>
+        <td><div class="actions">
+          <a class="btn" href="/benchmarks/suites/{{.ID}}">Open</a>
+          <button class="danger" hx-delete="/benchmarks/suites/{{.ID}}" hx-confirm="Delete suite {{.Name}}? Past runs keep their results.">Delete</button>
+        </div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No suites yet. Create one below, then add configs on its page.</p>{{end}}
+</section>
+
+<div class="two-col">
+  <section class="card">
+    <h2 style="margin-top:0">New suite</h2>
+    <form class="stack" method="post" action="/benchmarks/suites">
+      <label>Suite name <input name="name" required placeholder="qwen-vllm-sweep"></label>
+      <p class="muted" style="margin:0">First configuration (add more on the suite page):</p>
+      {{template "bench-config-fields" .}}
+      <div><button type="submit">Create suite</button></div>
+    </form>
+  </section>
+  <section class="card">
+    <h2 style="margin-top:0">Upload a suite (YAML)</h2>
+    <form class="stack" method="post" action="/benchmarks/suites" enctype="multipart/form-data">
+      <label>YAML file <input type="file" name="yaml" accept=".yaml,.yml" required></label>
+      <div><button type="submit">Upload suite</button></div>
+    </form>
+    <details>
+      <summary>Format</summary>
+<pre class="logs">name: qwen-vllm-sweep
+configs:
+  - label: fp16-8k
+    runtime: vllm
+    model: Qwen/Qwen2.5-7B-Instruct
+    gpu: nvidia
+    ctx_size: 8192
+    extra_args: "--gpu-memory-utilization 0.9"
+  - label: awq-8k
+    runtime: vllm
+    model: Qwen/Qwen2.5-7B-Instruct-AWQ
+    gpu: nvidia
+    ctx_size: 8192
+    extra_args: "--quantization awq"
+    env:
+      VLLM_USE_V1: "1"</pre>
+      <p class="muted">Fields: label, runtime (llamacpp | vllm | ollama), model, gpu (nvidia | amd | intel | empty), ctx_size, threads, gpu_layers, env, extra_args, cpu_mhz, mem_mb.</p>
+    </details>
+  </section>
+</div>
+
+<h2>Datasets</h2>
+<section class="card">
+  <p class="muted">JSONL accuracy sets: one object per line with <code>prompt</code> and <code>expected</code> (optional <code>system</code>). Scored by normalized exact match. Uploads are limited to 512 KB; larger files can live on the model share and be referenced by path when starting a run.</p>
+  {{if .Datasets}}
+  <table>
+    <thead><tr><th>Name</th><th>Rows</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+    <tbody>
+      {{range .Datasets}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td class="muted">{{.Rows}}</td>
+        <td class="muted">{{humanBytes .SizeBytes}}</td>
+        <td class="muted">{{.CreatedAt.Format "Jan 2 15:04"}}</td>
+        <td><button class="danger" hx-delete="/benchmarks/datasets/{{.ID}}" hx-confirm="Delete dataset {{.Name}}?">Delete</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form class="stack" method="post" action="/benchmarks/datasets" enctype="multipart/form-data" style="margin-top:0.75rem">
+    <label>Name <span class="muted">(optional; defaults to the file name)</span> <input name="name"></label>
+    <label>JSONL file <input type="file" name="file" accept=".jsonl,.json,.txt" required></label>
+    <div><button type="submit">Upload dataset</button></div>
+  </form>
+</section>
+
+<h2>Runs</h2>
+<section class="card" id="bench-runs" hx-get="/partials/bench-runs" hx-trigger="load, every 5s">
+  <p class="muted">Loading runs…</p>
+</section>
+{{end}}
+{{end}}

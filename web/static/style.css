@@ -181,6 +181,22 @@ button.copy:hover { color: var(--accent); }
 
 .error-card { border-color: var(--err); color: var(--err); }
 
+/* Benchmarks */
+.table-scroll { overflow-x: auto; }
+.compare th.col-head { text-align: right; white-space: nowrap; }
+.compare td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.compare td.best { color: var(--ok); font-weight: 700; }
+.compare td.metric { color: var(--muted); white-space: nowrap; }
+.col-error { color: var(--err); font-size: 0.8rem; font-weight: 400; max-width: 16rem; white-space: normal; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 56rem) { .two-col { grid-template-columns: 1fr; } }
+form.stack.wide { max-width: 100%; }
+.check-list { display: grid; gap: 0.3rem; }
+.check-list label { display: flex; gap: 0.5rem; align-items: baseline; }
+.check-list input { width: auto; }
+.inline { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+details summary { cursor: pointer; color: var(--muted); }
+
 code {
   background: rgba(77, 163, 255, 0.08);
   padding: 0.1rem 0.35rem;

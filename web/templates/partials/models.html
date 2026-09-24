@@ -7,6 +7,9 @@
           hx-disabled-elt="this" hx-indicator="#refresh-note">Refresh</button>
   <span id="refresh-note" class="muted htmx-indicator">Rescanning shareâ€¦</span>
   {{if not .FetchedAt.IsZero}}<span class="muted">Last scanned {{.FetchedAt.Format "15:04:05"}}</span>{{end}}
+  {{if .Refreshing}}
+  <span class="muted" hx-get="/partials/models" hx-trigger="load delay:3s" hx-target="#models">· Rescanning in background…</span>
+  {{end}}
 </p>
 {{if .Models}}
 <table>

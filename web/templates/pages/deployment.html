@@ -31,10 +31,10 @@
 </section>
 {{end}}
 
-<h2>Logs (stderr)</h2>
-<section id="logs" hx-get="/partials/logs?name={{.Name}}&stream=stderr"
-         hx-trigger="load, every 3s">
+<h2>Logs</h2>
+<div id="logs" hx-get="/partials/logs?name={{.Name}}&stream=stderr"
+     hx-trigger="load" hx-swap="outerHTML">
   <p class="muted">Loading logs…</p>
-</section>
+</div>
 {{end}}
 {{end}}

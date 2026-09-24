@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 // fakeIndexerNomad mimics the endpoints a catalog refresh touches: register,
 // dispatch, allocation polling, log retrieval, and purge.
 type fakeIndexerNomad struct {
+	mu         sync.Mutex
 	stdout     string
 	status     string // client status of the indexer allocation
 	dispatches int
@@ -27,6 +29,8 @@ type fakeIndexerNomad struct {
 
 func (f *fakeIndexerNomad) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
 		p := r.URL.Path
 		switch {
 		case p == "/v1/jobs" && r.Method == http.MethodPut:
@@ -139,6 +143,87 @@ func TestRefreshFailedJobSurfacesStderr(t *testing.T) {
 	_, _, err := c.Entries(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v, want indexer failure with stderr", err)
+	}
+}
+
+func (f *fakeIndexerNomad) counts() (dispatches, purges int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.dispatches, f.purges
+}
+
+func TestStaleCacheServedWhileRescanning(t *testing.T) {
+	f := &fakeIndexerNomad{status: "complete", stdout: `{"kind":"gguf","path":"old.gguf","size_bytes":1}` + "\n"}
+	c := newTestCatalog(t, f)
+	if _, _, err := c.Entries(context.Background()); err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+
+	// Age the cache past the TTL and change what the share holds.
+	c.mu.Lock()
+	c.fetched = c.fetched.Add(-2 * c.ttl)
+	c.lastAttempt = c.fetched
+	staleAt := c.fetched
+	c.mu.Unlock()
+	f.mu.Lock()
+	f.stdout = `{"kind":"gguf","path":"new.gguf","size_bytes":1}` + "\n"
+	f.mu.Unlock()
+
+	entries, fetched, err := c.Entries(context.Background())
+	if err != nil {
+		t.Fatalf("stale Entries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Path != "old.gguf" || !fetched.Equal(staleAt) {
+		t.Fatalf("expected stale cache to be served immediately, got %+v at %v", entries, fetched)
+	}
+
+	// Wait for the background rescan to land.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if refreshing, _ := c.Status(); !refreshing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background rescan did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries, _ = c.Cached()
+	if len(entries) != 1 || entries[0].Path != "new.gguf" {
+		t.Errorf("after rescan: %+v", entries)
+	}
+	if d, _ := f.counts(); d != 2 {
+		t.Errorf("dispatches = %d, want 2", d)
+	}
+}
+
+func TestConcurrentRefreshesShareOneDispatch(t *testing.T) {
+	f := &fakeIndexerNomad{status: "complete", stdout: `{"kind":"gguf","path":"a.gguf","size_bytes":1}` + "\n"}
+	c := newTestCatalog(t, f)
+
+	// Hold the fake so the first dispatch can't complete until every caller
+	// has joined the flight.
+	f.mu.Lock()
+	var wg sync.WaitGroup
+	errs := make(chan error, 5)
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- c.Refresh(context.Background())
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	f.mu.Unlock()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+	}
+	if d, _ := f.counts(); d != 1 {
+		t.Errorf("dispatches = %d, want 1", d)
 	}
 }
 

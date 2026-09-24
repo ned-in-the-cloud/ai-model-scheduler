@@ -30,9 +30,10 @@ func (s *Server) apiRefreshModels(w http.ResponseWriter, r *http.Request) {
 }
 
 type modelsPartialData struct {
-	Models    []catalog.Entry
-	FetchedAt time.Time
-	Error     string
+	Models     []catalog.Entry
+	FetchedAt  time.Time
+	Error      string
+	Refreshing bool // a background rescan is running; the partial polls until it finishes
 }
 
 func (s *Server) partialModels(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,11 @@ func (s *Server) partialModels(w http.ResponseWriter, r *http.Request) {
 		data.Error = err.Error()
 	}
 	data.Models, data.FetchedAt = entries, fetched
+	refreshing, lastErr := s.catalog.Status()
+	data.Refreshing = refreshing
+	if data.Error == "" && lastErr != nil && !refreshing {
+		data.Error = "last rescan failed, showing cached results: " + lastErr.Error()
+	}
 	s.renderPartial(w, "partial:models", data)
 }
 

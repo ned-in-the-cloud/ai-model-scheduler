@@ -1,6 +1,7 @@
 // Package catalog maintains the model index for the NAS share. It dispatches
 // the ams-indexer batch job on the remote box, parses the NDJSON manifest the
-// job prints to stdout, and caches the result with a TTL.
+// job prints to stdout, and caches the result with a TTL. Stale cache entries
+// are served immediately while a rescan runs in the background.
 package catalog
 
 import (
@@ -31,9 +32,18 @@ type Catalog struct {
 	ttl   time.Duration
 	log   *slog.Logger
 
-	mu      sync.Mutex
-	entries []Entry
-	fetched time.Time
+	mu          sync.Mutex
+	entries     []Entry
+	fetched     time.Time
+	inflight    *flight   // non-nil while a rescan is running
+	lastAttempt time.Time // start of the most recent rescan, successful or not
+	lastErr     error     // error from the most recent rescan
+}
+
+// flight is one in-progress rescan that any number of callers can wait on.
+type flight struct {
+	done chan struct{}
+	err  error
 }
 
 func New(nomad *nomadapi.Client, cfg config.Config, log *slog.Logger) *Catalog {
@@ -47,31 +57,77 @@ func (c *Catalog) Cached() ([]Entry, time.Time) {
 	return c.entries, c.fetched
 }
 
-// Entries returns the cached model list, refreshing it first if the cache is
-// empty or older than the TTL.
-func (c *Catalog) Entries(ctx context.Context) ([]Entry, time.Time, error) {
-	c.mu.Lock()
-	fresh := !c.fetched.IsZero() && time.Since(c.fetched) < c.ttl
-	entries, fetched := c.entries, c.fetched
-	c.mu.Unlock()
-	if fresh {
-		return entries, fetched, nil
-	}
-	if err := c.Refresh(ctx); err != nil {
-		// Stale data beats no data, but only if we have some.
-		if fetched.IsZero() {
-			return nil, time.Time{}, err
-		}
-		c.log.Warn("catalog refresh failed, serving stale data", "err", err)
-		return entries, fetched, nil
-	}
+// Status reports whether a rescan is in progress and the error from the most
+// recent one, if it failed.
+func (c *Catalog) Status() (refreshing bool, lastErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.entries, c.fetched, nil
+	return c.inflight != nil, c.lastErr
 }
 
-// Refresh dispatches the indexer job, waits for it, and replaces the cache.
+// Entries returns the cached model list. An empty cache blocks on a rescan;
+// a cache older than the TTL is returned as-is while a rescan starts in the
+// background (stale-while-revalidate).
+func (c *Catalog) Entries(ctx context.Context) ([]Entry, time.Time, error) {
+	c.mu.Lock()
+	entries, fetched := c.entries, c.fetched
+	if !fetched.IsZero() {
+		// Throttle on the last attempt, not the last success, so a failing
+		// indexer isn't redispatched on every page load.
+		if time.Since(c.lastAttempt) >= c.ttl {
+			c.startLocked()
+		}
+		c.mu.Unlock()
+		return entries, fetched, nil
+	}
+	c.mu.Unlock()
+
+	if err := c.Refresh(ctx); err != nil {
+		return nil, time.Time{}, err
+	}
+	entries, fetched = c.Cached()
+	return entries, fetched, nil
+}
+
+// Refresh rescans the share and waits for the result. Concurrent callers
+// share a single indexer dispatch. The rescan is detached from ctx, so a
+// client navigating away doesn't abort it; ctx only bounds the wait.
 func (c *Catalog) Refresh(ctx context.Context) error {
+	c.mu.Lock()
+	f := c.startLocked()
+	c.mu.Unlock()
+	select {
+	case <-f.done:
+		return f.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// startLocked begins a background rescan unless one is already running, and
+// returns the in-progress flight. c.mu must be held.
+func (c *Catalog) startLocked() *flight {
+	if c.inflight != nil {
+		return c.inflight
+	}
+	f := &flight{done: make(chan struct{})}
+	c.inflight, c.lastAttempt = f, time.Now()
+	go func() {
+		err := c.scan(context.Background())
+		if err != nil {
+			c.log.Warn("catalog refresh failed", "err", err)
+		}
+		c.mu.Lock()
+		c.inflight, c.lastErr = nil, err
+		c.mu.Unlock()
+		f.err = err
+		close(f.done)
+	}()
+	return f
+}
+
+// scan dispatches the indexer job, waits for it, and replaces the cache.
+func (c *Catalog) scan(ctx context.Context) error {
 	// Upsert the parameterized job first: self-registration is idempotent
 	// and removes any startup-ordering dependency on Nomad availability.
 	if err := c.nomad.Register(jobspec.Indexer(c.env)); err != nil {

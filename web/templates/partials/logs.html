@@ -1,9 +1,20 @@
 {{define "partial:logs"}}
-{{if .Error}}
-<p class="muted">{{.Error}}</p>
-{{else if .Logs}}
-<pre class="logs">{{.Logs}}</pre>
-{{else}}
-<p class="muted">No {{.Stream}} output yet.</p>
-{{end}}
+<div id="logs" hx-get="/partials/logs?name={{.Name}}&stream={{.Stream}}"
+     hx-trigger="every 3s" hx-swap="outerHTML">
+  <div class="tabs">
+    <button class="{{if eq .Stream "stderr"}}active{{end}}"
+            hx-get="/partials/logs?name={{.Name}}&stream=stderr"
+            hx-target="#logs" hx-swap="outerHTML">stderr</button>
+    <button class="{{if eq .Stream "stdout"}}active{{end}}"
+            hx-get="/partials/logs?name={{.Name}}&stream=stdout"
+            hx-target="#logs" hx-swap="outerHTML">stdout</button>
+  </div>
+  {{if .Error}}
+  <p class="muted">{{.Error}}</p>
+  {{else if .Logs}}
+  <pre class="logs">{{.Logs}}</pre>
+  {{else}}
+  <p class="muted">No {{.Stream}} output yet.</p>
+  {{end}}
+</div>
 {{end}}

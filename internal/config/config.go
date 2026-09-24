@@ -86,7 +86,7 @@ func defaults() Config {
 			LlamaCPPROCm:  "ghcr.io/ggml-org/llama.cpp:server-rocm",
 			LlamaCPPIntel: "ghcr.io/ggml-org/llama.cpp:server-intel",
 			VLLM:          "docker.io/vllm/vllm-openai:latest",
-			VLLMROCm:      "docker.io/rocm/vllm:latest",
+			VLLMROCm:      "docker.io/vllm/vllm-openai-rocm:latest",
 			VLLMIntel:     "", // no well-known default; set IMAGE_VLLM_INTEL
 			Ollama:        "docker.io/ollama/ollama:latest",
 			OllamaROCm:    "docker.io/ollama/ollama:rocm",

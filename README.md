@@ -58,7 +58,7 @@ Environment variables (or a YAML file via `CONFIG_FILE`; env wins):
 | `IMAGE_LLAMACPP_ROCM` | `ghcr.io/ggml-org/llama.cpp:server-rocm` | llama.cpp AMD image |
 | `IMAGE_LLAMACPP_INTEL` | `ghcr.io/ggml-org/llama.cpp:server-intel` | llama.cpp Intel (SYCL) image |
 | `IMAGE_VLLM` | `docker.io/vllm/vllm-openai:latest` | vLLM NVIDIA image |
-| `IMAGE_VLLM_ROCM` | `docker.io/rocm/vllm:latest` | vLLM AMD image |
+| `IMAGE_VLLM_ROCM` | `docker.io/vllm/vllm-openai-rocm:latest` | vLLM AMD image |
 | `IMAGE_VLLM_INTEL` | – | vLLM Intel image (unset = unsupported) |
 | `IMAGE_OLLAMA` | `docker.io/ollama/ollama:latest` | Ollama CPU/NVIDIA image |
 | `IMAGE_OLLAMA_ROCM` | `docker.io/ollama/ollama:rocm` | Ollama AMD image |

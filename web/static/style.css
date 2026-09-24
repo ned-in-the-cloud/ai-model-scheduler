@@ -162,6 +162,8 @@ button.copy:hover { color: var(--accent); }
 
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--accent); background: rgba(77, 163, 255, 0.1); }
+.tabs button.logs-resume { margin-left: auto; color: var(--accent); }
+#logs pre.logs { max-height: 65vh; }
 
 /* Meter: fill carries severity; the unfilled track is a lighter step of the
    same ramp so state reads across the whole bar. */

@@ -1,6 +1,6 @@
 {{define "partial:logs"}}
 <div id="logs" hx-get="/partials/logs?name={{.Name}}&stream={{.Stream}}"
-     hx-trigger="every 3s" hx-swap="outerHTML">
+     hx-trigger="every 3s, logs-refresh" hx-swap="outerHTML">
   <div class="tabs">
     <button class="{{if eq .Stream "stderr"}}active{{end}}"
             hx-get="/partials/logs?name={{.Name}}&stream=stderr"
@@ -8,6 +8,7 @@
     <button class="{{if eq .Stream "stdout"}}active{{end}}"
             hx-get="/partials/logs?name={{.Name}}&stream=stdout"
             hx-target="#logs" hx-swap="outerHTML">stdout</button>
+    <button type="button" class="logs-resume" hidden onclick="followLogs()">Paused · Jump to latest ↓</button>
   </div>
   {{if .Error}}
   <p class="muted">{{.Error}}</p>

@@ -24,8 +24,9 @@ func vLLM(p Params, env Env) (*api.Job, error) {
 		return nil, err
 	}
 
+	model := path.Join(env.ModelMount, p.Model)
 	args := []string{
-		"--model", path.Join(env.ModelMount, p.Model),
+		"--model", model,
 		"--host", "0.0.0.0",
 		"--port", strconv.Itoa(p.Port),
 		"--served-model-name", p.Name,
@@ -46,6 +47,20 @@ func vLLM(p Params, env Env) (*api.Job, error) {
 		task.Config["shm_size"] = 8 << 30
 	} else {
 		task.Config["shm_size"] = "8g"
+	}
+
+	// Run from the model directory so relative file paths in extra args
+	// resolve against files shipped with the model, e.g. Nemotron's
+	// --reasoning-parser-plugin nano_v3_reasoning_parser.py. The images'
+	// own working directory (/app) is otherwise used.
+	workDir := model
+	if strings.HasSuffix(strings.ToLower(model), ".gguf") {
+		workDir = path.Dir(model)
+	}
+	if env.Driver == "docker" {
+		task.Config["work_dir"] = workDir
+	} else {
+		task.Config["working_dir"] = workDir
 	}
 	return job, nil
 }

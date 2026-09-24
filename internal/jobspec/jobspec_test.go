@@ -155,11 +155,12 @@ func TestVLLMJob(t *testing.T) {
 	p := Params{Name: "qwen", Runtime: "vllm", Model: "qwen2-7b", Port: 8002, GPU: "nvidia", CtxSize: 8192}
 
 	for _, tt := range []struct {
-		driver  string
-		wantShm any
+		driver     string
+		wantShm    any
+		workDirKey string
 	}{
-		{driver: "podman", wantShm: "8g"},
-		{driver: "docker", wantShm: 8 << 30},
+		{driver: "podman", wantShm: "8g", workDirKey: "working_dir"},
+		{driver: "docker", wantShm: 8 << 30, workDirKey: "work_dir"},
 	} {
 		t.Run(tt.driver, func(t *testing.T) {
 			job, err := Build(p, testEnv(tt.driver))
@@ -169,6 +170,9 @@ func TestVLLMJob(t *testing.T) {
 			task := job.TaskGroups[0].Tasks[0]
 			if task.Config["shm_size"] != tt.wantShm {
 				t.Errorf("shm_size = %v, want %v", task.Config["shm_size"], tt.wantShm)
+			}
+			if got := task.Config[tt.workDirKey]; got != "/models/qwen2-7b" {
+				t.Errorf("%s = %v, want /models/qwen2-7b", tt.workDirKey, got)
 			}
 			args := task.Config["args"].([]string)
 			for _, want := range [][]string{

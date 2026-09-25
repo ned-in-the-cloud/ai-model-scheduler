@@ -569,6 +569,31 @@ func TestRunnerDeploymentStoppedDuringEval(t *testing.T) {
 	}
 }
 
+// A model server that is OOM-killed and restarted in place still lets the
+// eval finish; the result must say so, since its later metrics are skewed.
+func TestRunnerWarnsOnServerRestart(t *testing.T) {
+	store := testStore(t)
+	suite := &Suite{Name: "s", Configs: []Config{{Label: "a", Runtime: "llamacpp", Model: "m.gguf", GPU: "amd"}}}
+	_ = store.SaveSuite(suite)
+	fc := newFakeCluster()
+	fc.benchExits = []string{`Exit Code: 137, Exit Message: "Podman container killed by OOM killer"`}
+	r := NewRunner(store, fc, testEnv(), slog.New(slog.DiscardHandler))
+	r.Poll = time.Millisecond
+	run, err := r.Start(suite.ID, EvalSpec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wait()
+	got, _ := store.GetRun(run.ID)
+	res := got.Results[0]
+	if res.Status != ConfigComplete {
+		t.Fatalf("status = %s (%s)", res.Status, res.Error)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "exited 1 time") || !strings.Contains(res.Warnings[0], "OOM killer") {
+		t.Errorf("warnings = %q", res.Warnings)
+	}
+}
+
 func TestRunnerRecover(t *testing.T) {
 	store := testStore(t)
 	run := &Run{Status: RunRunning, Restore: []jobspec_Params{{Name: "prod-model", Runtime: "vllm", Model: "m", GPU: "nvidia", Port: 8000}},

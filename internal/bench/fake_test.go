@@ -35,6 +35,7 @@ type fakeCluster struct {
 	jobs        map[string]int  // registered eval jobs -> poll count
 	jobsSeen    int
 	registered  []*api.Job // every job passed to RegisterJob, in order
+	benchExits  []string   // task exit messages reported for bench deployments
 	hang        bool       // eval jobs never complete
 	nextPort    int
 }
@@ -158,6 +159,15 @@ func (f *fakeCluster) ReadLogs(allocID, stream string, all bool) (string, error)
 }
 
 func (f *fakeCluster) FailureReason(allocID string) string { return "boom\nfinal error line" }
+
+func (f *fakeCluster) TaskExits(allocID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.HasPrefix(allocID, "alloc-"+deploymentPrefix) {
+		return f.benchExits
+	}
+	return nil
+}
 
 func (f *fakeCluster) PurgeJob(jobID string) error {
 	f.mu.Lock()

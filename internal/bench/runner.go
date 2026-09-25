@@ -37,6 +37,9 @@ type Cluster interface {
 	BatchStatus(jobID string) (allocID, status string, err error)
 	ReadLogs(allocID, stream string, all bool) (string, error)
 	FailureReason(allocID string) string
+	// TaskExits returns the exit messages of an allocation's task, one per
+	// time it terminated (e.g. "Exit Code: 137, ... OOM killer").
+	TaskExits(allocID string) []string
 	PurgeJob(jobID string) error
 	PurgeJobsWithPrefix(prefix string) error
 
@@ -387,6 +390,9 @@ func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult, sta
 		fail("deploy: %v", err)
 		return
 	}
+	// Runs before the teardown above (defers are LIFO), while the
+	// allocation can still be read.
+	defer r.noteServerExits(res)
 
 	readyTimeout := time.Duration(run.Eval.ReadyTimeoutSec) * time.Second
 	endpoint, err := r.waitHealthy(ctx, name, readyTimeout)
@@ -433,6 +439,26 @@ func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult, sta
 	res.Progress = ""
 	res.FinishedAt = time.Now().UTC()
 	r.log.Info("benchmark config complete", "run", run.ID, "label", res.Label)
+}
+
+// noteServerExits records a warning when the model server died during the
+// config. Nomad restarts it in place, so the eval can still finish, but the
+// requests sent while it was down or reloading show up as errors and zeros.
+func (r *Runner) noteServerExits(res *ConfigResult) {
+	deps, err := r.cluster.ListManaged()
+	if err != nil {
+		return
+	}
+	d, ok := findDeployment(deps, res.Deployment)
+	if !ok || d.AllocID == "" {
+		return
+	}
+	exits := r.cluster.TaskExits(d.AllocID)
+	if len(exits) == 0 {
+		return
+	}
+	res.Warnings = append(res.Warnings, fmt.Sprintf("model server exited %d time(s) during the run and was restarted; last exit: %s",
+		len(exits), exits[len(exits)-1]))
 }
 
 // waitHealthy polls until the deployment's allocation is running with an

@@ -127,6 +127,17 @@ func gpuDevices(vendor string) []string {
 	return nil
 }
 
+// defaultMemMB is the task memory limit when the deployment sets none.
+const defaultMemMB = 8192
+
+// memLimitMB is the task's hard memory limit.
+func memLimitMB(p Params) int {
+	if p.MemMB > 0 {
+		return p.MemMB
+	}
+	return defaultMemMB
+}
+
 // baseJob builds the shared service-job scaffolding: one group, one task,
 // static port labeled nomadapi.PortLabel, model volume mounted read-only,
 // management meta tags.
@@ -137,10 +148,7 @@ func baseJob(p Params, env Env, image string, args []string) *api.Job {
 	if cpu == 0 {
 		cpu = 1000
 	}
-	mem := p.MemMB
-	if mem == 0 {
-		mem = 4096
-	}
+	mem := memLimitMB(p)
 
 	task := &api.Task{
 		Name:   nomadapi.TaskName,

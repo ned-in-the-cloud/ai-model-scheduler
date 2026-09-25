@@ -53,7 +53,7 @@
     <label>CPU reservation (MHz) <span class="muted">(Nomad scheduling reservation, not a hard cap; default 1000)</span>
       <input name="cpu_mhz" type="number" value="{{if .Params.CPUMHz}}{{.Params.CPUMHz}}{{end}}">
     </label>
-    <label>Memory limit (MB) <span class="muted">(hard limit — the container is killed if it exceeds this; default 4096)</span>
+    <label>Memory limit (MB) <span class="muted">(hard limit — the container is killed if it exceeds this; default 8192)</span>
       <input name="mem_mb" type="number" value="{{if .Params.MemMB}}{{.Params.MemMB}}{{end}}">
     </label>
     <div><button type="submit">Deploy</button></div>

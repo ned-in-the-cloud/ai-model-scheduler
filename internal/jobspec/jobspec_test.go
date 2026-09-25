@@ -406,3 +406,45 @@ func containsSeq(got, want []string) bool {
 	}
 	return false
 }
+
+// llama-server's prompt cache lives in host RAM and defaults to 8 GiB; it
+// must be sized to the task's memory limit or the container is OOM-killed
+// after enough requests.
+func TestLlamaCPPCacheRAM(t *testing.T) {
+	tests := []struct {
+		name  string
+		mem   int
+		extra string
+		want  string // "" = flag must come only from extra args
+	}{
+		{name: "default limit", mem: 0, want: "5120"},
+		{name: "4 GB limit", mem: 4096, want: "1024"},
+		{name: "small limit", mem: 2048, want: "0"},
+		{name: "large limit capped at default", mem: 65536, want: "8192"},
+		{name: "user flag wins", mem: 0, extra: "--cache-ram 4096 -np 2"},
+		{name: "user flag with equals", mem: 0, extra: "--cache-ram=512"},
+		{name: "user short flag", mem: 0, extra: "-cram 0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Params{Name: "l3", Runtime: "llamacpp", Model: "l3.gguf", Port: 8001, MemMB: tt.mem, ExtraArgs: tt.extra}
+			job, err := Build(p, testEnv("podman"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := job.TaskGroups[0].Tasks[0].Config["args"].([]string)
+			n := 0
+			for i, a := range args {
+				if a == "--cache-ram" || a == "-cram" || strings.HasPrefix(a, "--cache-ram=") {
+					n++
+					if tt.want != "" && (i+1 >= len(args) || args[i+1] != tt.want) {
+						t.Errorf("args = %v, want --cache-ram %s", args, tt.want)
+					}
+				}
+			}
+			if n != 1 {
+				t.Errorf("cache flag appears %d times in %v, want once", n, args)
+			}
+		})
+	}
+}

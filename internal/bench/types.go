@@ -220,11 +220,14 @@ func (r Run) Active() bool { return r.Status == RunPending || r.Status == RunRun
 
 // ConfigResult is the outcome for one configuration in a run.
 type ConfigResult struct {
-	Index      int       `json:"index"`
-	Label      string    `json:"label"`
-	Config     Config    `json:"config"`
-	Status     string    `json:"status"`
-	Error      string    `json:"error,omitempty"`
+	Index  int    `json:"index"`
+	Label  string `json:"label"`
+	Config Config `json:"config"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	// Warnings flag results that completed but may be skewed, such as the
+	// model server being OOM-killed and restarted mid-eval.
+	Warnings   []string  `json:"warnings,omitempty"`
 	Progress   string    `json:"progress,omitempty"` // last progress line from the eval job
 	Deployment string    `json:"deployment,omitempty"`
 	StartedAt  time.Time `json:"started_at,omitempty"`

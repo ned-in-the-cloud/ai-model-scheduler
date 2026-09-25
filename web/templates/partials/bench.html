@@ -30,7 +30,7 @@
   <input name="extra_args" placeholder="--gpu-memory-utilization 0.9 --max-num-seqs 8"></label>
 <div class="inline">
   <label>CPU (MHz) <input name="cpu_mhz" type="number" placeholder="1000"></label>
-  <label>Memory (MB) <input name="mem_mb" type="number" placeholder="4096"></label>
+  <label>Memory (MB) <input name="mem_mb" type="number" placeholder="8192"></label>
 </div>
 {{end}}
 
@@ -88,7 +88,7 @@
         <td class="muted">{{.Index}}</td>
         <td><strong>{{.Label}}</strong><br><span class="muted">{{.Config.Runtime}}{{if .Config.GPU}}/{{.Config.GPU}}{{end}} · {{.Config.Model}}{{if .Config.ExtraArgs}} · <code>{{.Config.ExtraArgs}}</code>{{end}}</span></td>
         <td>{{template "bench-status" .Status}}</td>
-        <td class="muted" style="max-width:28rem">{{if .Error}}<span class="col-error">{{.Error}}</span>{{else if .Progress}}{{.Progress}}{{else if .Metrics}}{{if .Metrics.Errors}}<span class="col-error">{{len .Metrics.Errors}} request error(s); see JSON export</span>{{else}}ok{{end}}{{end}}</td>
+        <td class="muted" style="max-width:28rem">{{if .Error}}<span class="col-error">{{.Error}}</span>{{else if .Progress}}{{.Progress}}{{else if .Metrics}}{{if .Metrics.Errors}}<span class="col-error">{{len .Metrics.Errors}} request error(s); see JSON export</span>{{else}}ok{{end}}{{end}}{{range .Warnings}}<br><span class="col-error">⚠ {{.}}</span>{{end}}</td>
         <td class="muted">{{duration .StartedAt .FinishedAt}}</td>
       </tr>
       {{end}}

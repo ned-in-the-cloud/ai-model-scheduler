@@ -46,6 +46,22 @@ func (c *NomadCluster) FailureReason(allocID string) string {
 	return c.Nomad.BatchFailureReason(allocID)
 }
 
+func (c *NomadCluster) TaskExits(allocID string) []string {
+	events, err := c.Nomad.AllocEvents(allocID)
+	if err != nil {
+		return nil
+	}
+	var exits []string
+	for _, ev := range events {
+		// A normal stop also ends in "Terminated", but only after a
+		// "Killing" event; the runner reads exits before tearing down.
+		if ev.Type == "Terminated" {
+			exits = append(exits, ev.Message)
+		}
+	}
+	return exits
+}
+
 func (c *NomadCluster) BatchStatus(jobID string) (string, string, error) {
 	alloc, err := c.Nomad.LatestAlloc(jobID)
 	if err != nil || alloc == nil {

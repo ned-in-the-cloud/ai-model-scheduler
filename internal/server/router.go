@@ -75,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /partials/node-stats", s.partialNodeStats)
 	mux.HandleFunc("GET /partials/logs", s.partialLogs)
 	mux.HandleFunc("GET /partials/models", s.partialModels)
+	mux.HandleFunc("GET /partials/model-select", s.partialModelSelect)
 	mux.HandleFunc("GET /partials/downloads", s.partialDownloads)
 	mux.HandleFunc("GET /partials/download-logs", s.partialDownloadLogs)
 	mux.HandleFunc("GET /partials/gpus", s.partialGPUs)

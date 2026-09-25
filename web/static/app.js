@@ -68,3 +68,30 @@ document.addEventListener("htmx:afterSwap", () => {
   if (logView.follow) pre.scrollTop = pre.scrollHeight;
   setLogFollow(logView.follow);
 });
+
+// Benchmark config form: the model drop-down only offers files the chosen
+// runtime can load (GGUF for llama.cpp, HF directories for vLLM, none for
+// Ollama).
+const runtimeKinds = { llamacpp: "gguf", vllm: "hf-dir", ollama: "" };
+
+function filterModels(form) {
+  const runtime = form.querySelector("select[name=runtime]");
+  const models = form.querySelector(".model-select select[name=model]");
+  if (!runtime || !models) return;
+  const kind = runtimeKinds[runtime.value];
+  models.querySelectorAll("optgroup").forEach((g) => {
+    const ok = g.dataset.kind === kind;
+    g.hidden = !ok;
+    g.disabled = !ok;
+  });
+  const chosen = models.selectedOptions[0];
+  if (chosen && chosen.parentElement.disabled) models.value = "";
+}
+
+document.addEventListener("change", (e) => {
+  if (e.target.matches("select[name=runtime]") && e.target.form) filterModels(e.target.form);
+});
+
+document.addEventListener("htmx:afterSwap", (e) => {
+  if (e.target.matches(".model-select") && e.target.closest("form")) filterModels(e.target.closest("form"));
+});

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/api"
+
+	"ai-model-scheduler/internal/jobspec"
 )
 
 func testStore(t *testing.T) *Store {
@@ -485,8 +487,10 @@ func TestRunnerCancel(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		got, _ := store.GetRun(run.ID)
-		if got.Results[0].Status == ConfigEvaluating || time.Now().After(deadline) {
+		fc.mu.Lock()
+		evaluating := len(fc.jobs) > 0 // the first eval job is registered
+		fc.mu.Unlock()
+		if evaluating || time.Now().After(deadline) {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -507,6 +511,61 @@ func TestRunnerCancel(t *testing.T) {
 	}
 	if r.ActiveID() != "" {
 		t.Error("runner still active after cancel")
+	}
+}
+
+// Stopping the model under test from the deployments page ends its eval
+// job instead of leaving it running against a dead endpoint.
+func TestRunnerDeploymentStoppedDuringEval(t *testing.T) {
+	store := testStore(t)
+	suite := &Suite{Name: "s", Configs: []Config{
+		{Label: "a", Runtime: "vllm", Model: "m", GPU: "nvidia"},
+		{Label: "b", Runtime: "vllm", Model: "m", GPU: "nvidia"},
+	}}
+	_ = store.SaveSuite(suite)
+	fc := newFakeCluster()
+	fc.hang = true // eval jobs never finish on their own
+	r := NewRunner(store, fc, testEnv(), slog.New(slog.DiscardHandler))
+	r.Poll = 5 * time.Millisecond
+	run, err := r.Start(suite.ID, EvalSpec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Watch the fake cluster rather than the run file: on Windows a save can
+	// fail while the test reads the file, so the stored status may lag.
+	stopWhenEvaluating := func(idx int) {
+		name := fmt.Sprintf("%s%s-%d", deploymentPrefix, Short(run.ID), idx)
+		jobID := jobspec.BenchJobPrefix + strings.TrimPrefix(name, deploymentPrefix)
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			fc.mu.Lock()
+			_, evaluating := fc.jobs[jobID]
+			fc.mu.Unlock()
+			if evaluating {
+				_ = fc.Stop(name, idx == 1) // stop, then purge
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("config %d never reached evaluating", idx)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	stopWhenEvaluating(0)
+	stopWhenEvaluating(1)
+	r.Wait()
+
+	got, _ := store.GetRun(run.ID)
+	if got.Status != RunComplete {
+		t.Fatalf("status = %s (%s)", got.Status, got.Error)
+	}
+	for _, res := range got.Results {
+		if res.Status != ConfigFailed || !strings.Contains(res.Error, "stopped during the eval") {
+			t.Errorf("%s: %s %q", res.Label, res.Status, res.Error)
+		}
+	}
+	if len(fc.jobs) != 0 {
+		t.Errorf("eval jobs left running: %v", fc.jobs)
 	}
 }
 

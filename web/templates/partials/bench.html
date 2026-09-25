@@ -8,11 +8,11 @@
     <option value="ollama">Ollama (server only)</option>
   </select>
 </label>
-<label>Model path <span class="muted">(relative to the model share)</span>
-  <input name="model" list="model-list" placeholder="Qwen/Qwen2.5-7B-Instruct">
-  <datalist id="model-list">
-    {{range .Models}}<option value="{{.Path}}">{{if eq .Kind "gguf"}}GGUF{{else}}HF dir{{end}} · {{humanBytes .SizeBytes}}</option>{{end}}
-  </datalist>
+<label>Model <span class="muted">(from the model share)</span>
+  <div class="model-select" hx-get="/partials/model-select" hx-trigger="load" hx-swap="innerHTML">
+    <select name="model" disabled><option value="">Loading models…</option></select>
+    <span class="muted">Scanning the model share…</span>
+  </div>
 </label>
 <label>GPU
   <div class="gpu-select" hx-get="/partials/gpus" hx-trigger="load" hx-swap="innerHTML">
@@ -129,4 +129,23 @@
 </details>
 {{end}}{{end}}{{end}}
 {{end}}
+{{end}}
+
+{{define "partial:model-select"}}
+<select name="model">
+  <option value="">— choose a model (none for Ollama) —</option>
+  {{if .GGUF}}<optgroup label="GGUF files (llama.cpp)" data-kind="gguf">
+    {{range .GGUF}}<option value="{{.Path}}">{{.Path}} · {{humanBytes .SizeBytes}}</option>{{end}}
+  </optgroup>{{end}}
+  {{if .HFDirs}}<optgroup label="HF directories (vLLM)" data-kind="hf-dir">
+    {{range .HFDirs}}<option value="{{.Path}}">{{.Path}} · {{humanBytes .SizeBytes}}</option>{{end}}
+  </optgroup>{{end}}
+</select>
+<div>
+  <button type="button" class="secondary" hx-get="/partials/model-select?refresh=1"
+          hx-target="closest .model-select" hx-disabled-elt="this">Rescan share</button>
+  {{if .Error}}<span class="badge err">{{.Error}}</span>
+  {{else if or .GGUF .HFDirs}}<span class="muted">Showing models for the selected runtime</span>
+  {{else}}<span class="muted">No models found on the share</span>{{end}}
+</div>
 {{end}}

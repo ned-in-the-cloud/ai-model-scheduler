@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"ai-model-scheduler/internal/catalog"
@@ -57,4 +59,39 @@ func (s *Server) uiRefreshModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.partialModels(w, r)
+}
+
+type modelSelectData struct {
+	GGUF, HFDirs []catalog.Entry
+	Error        string
+}
+
+// partialModelSelect renders the model drop-down for the benchmark config
+// form. The first load after an app restart waits for a share scan, which
+// is why the form fetches it separately; ?refresh=1 forces a rescan.
+func (s *Server) partialModelSelect(w http.ResponseWriter, r *http.Request) {
+	data := modelSelectData{}
+	var entries []catalog.Entry
+	var err error
+	if r.URL.Query().Get("refresh") != "" {
+		if err = s.catalog.Refresh(r.Context()); err == nil {
+			entries, _ = s.catalog.Cached()
+		}
+	} else {
+		entries, _, err = s.catalog.Entries(r.Context())
+	}
+	if err != nil {
+		data.Error = err.Error()
+	}
+	for _, e := range entries {
+		if e.Kind == "gguf" {
+			data.GGUF = append(data.GGUF, e)
+		} else {
+			data.HFDirs = append(data.HFDirs, e)
+		}
+	}
+	byPath := func(a, b catalog.Entry) int { return strings.Compare(a.Path, b.Path) }
+	slices.SortFunc(data.GGUF, byPath)
+	slices.SortFunc(data.HFDirs, byPath)
+	s.renderPartial(w, "partial:model-select", data)
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"ai-model-scheduler/internal/bench"
+	"ai-model-scheduler/internal/catalog"
 )
 
 func TestBenchmarkSuitesAPIAndPages(t *testing.T) {
@@ -114,5 +115,38 @@ func TestBenchmarkRunPageAndExport(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/benchmarks/runs/"+run.ID+"/export/xml", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown export format: %d", rec.Code)
+	}
+}
+
+func TestModelSelectPartial(t *testing.T) {
+	srv := newTestServer(t, fakeNomad(t, healthyNomadMux()).URL, nil)
+
+	// Models split into runtime groups the form's script filters on.
+	rec := httptest.NewRecorder()
+	srv.renderPartial(rec, "partial:model-select", modelSelectData{
+		GGUF:   []catalog.Entry{{Path: "llama-q4.gguf", Kind: "gguf", SizeBytes: 4 << 30}},
+		HFDirs: []catalog.Entry{{Path: "Qwen/Qwen2.5-7B", Kind: "hf-dir", SizeBytes: 15 << 30}},
+	})
+	body := rec.Body.String()
+	for _, want := range []string{`<select name="model">`, `data-kind="gguf"`, `value="llama-q4.gguf"`, `data-kind="hf-dir"`, `value="Qwen/Qwen2.5-7B"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in %s", want, body)
+		}
+	}
+
+	// The fake Nomad has no indexer, so the scan fails: the drop-down still
+	// renders (empty) with the error and a rescan button.
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/partials/model-select", nil))
+	body = rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `name="model"`) || !strings.Contains(body, "badge err") || !strings.Contains(body, "refresh=1") {
+		t.Errorf("scan failure: %d %s", rec.Code, body)
+	}
+
+	// The config form defers to the partial instead of listing models inline.
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/benchmarks", nil))
+	if !strings.Contains(rec.Body.String(), `hx-get="/partials/model-select"`) {
+		t.Error("benchmarks page does not load the model drop-down")
 	}
 }

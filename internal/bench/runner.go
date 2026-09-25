@@ -440,9 +440,17 @@ func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult, sta
 func (r *Runner) waitHealthy(ctx context.Context, name string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	var last nomadapi.Deployment
+	misses := 0
 	for {
 		deps, err := r.cluster.ListManaged()
 		if err == nil {
+			// ListManaged skips jobs whose lookup fails, so one miss may be a
+			// transient error; two in a row means the job was purged.
+			if _, ok := findDeployment(deps, name); ok {
+				misses = 0
+			} else if misses++; misses >= 2 {
+				return "", fmt.Errorf("deployment %s was removed before it became healthy", name)
+			}
 			for _, d := range deps {
 				if d.Name != name {
 					continue
@@ -478,7 +486,20 @@ func (r *Runner) watchEval(ctx context.Context, run *Run, res *ConfigResult, job
 	resources := &Resources{}
 	var utilSum float64
 	vendor := res.Config.GPU
+	gone := 0
 	for {
+		// The model under test can be stopped from the deployments page; end
+		// the eval rather than let it run on against a dead endpoint. Two
+		// sightings in a row, as a single missing entry may be transient.
+		if deps, err := r.cluster.ListManaged(); err == nil {
+			if d, ok := findDeployment(deps, res.Deployment); !ok || deploymentStopped(d) {
+				if gone++; gone >= 2 {
+					return nil, nil, fmt.Errorf("deployment %s stopped during the eval", res.Deployment)
+				}
+			} else {
+				gone = 0
+			}
+		}
 		allocID, status, err := r.cluster.BatchStatus(jobID)
 		if err == nil && allocID != "" {
 			switch status {
@@ -577,6 +598,25 @@ func (r *Runner) Recover() {
 		run.FinishedAt = time.Now().UTC()
 		r.save(run)
 	}
+}
+
+func findDeployment(deps []nomadapi.Deployment, name string) (nomadapi.Deployment, bool) {
+	for _, d := range deps {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return nomadapi.Deployment{}, false
+}
+
+// deploymentStopped reports a deployment that is no longer serving: the job
+// is dead, or its allocation has ended (a stopped job shows this first).
+func deploymentStopped(d nomadapi.Deployment) bool {
+	switch d.AllocStatus {
+	case "complete", "failed", "lost":
+		return true
+	}
+	return d.Status == "dead"
 }
 
 func firstLine(s string) string {

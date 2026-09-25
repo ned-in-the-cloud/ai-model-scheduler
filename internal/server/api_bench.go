@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"ai-model-scheduler/internal/bench"
-	"ai-model-scheduler/internal/catalog"
 )
 
 // JSON API
@@ -193,7 +192,6 @@ func notFoundStatus(err error) int {
 type benchmarksPageData struct {
 	Suites   []bench.Suite
 	Datasets []bench.Dataset
-	Models   []catalog.Entry // for the config form's model picker
 	Error    string
 }
 
@@ -201,7 +199,6 @@ func (s *Server) uiBenchmarks(w http.ResponseWriter, r *http.Request) {
 	data := benchmarksPageData{Error: r.URL.Query().Get("error")}
 	data.Suites, _ = s.benchStore.ListSuites()
 	data.Datasets, _ = s.benchStore.ListDatasets()
-	data.Models, _ = s.catalog.Cached()
 	s.renderPage(w, "benchmarks", pageData{Title: "Benchmarks", Active: "benchmarks", Data: data})
 }
 
@@ -259,7 +256,6 @@ func (s *Server) uiDeleteSuite(w http.ResponseWriter, r *http.Request) {
 type suitePageData struct {
 	Suite    bench.Suite
 	YAML     string
-	Models   []catalog.Entry
 	Datasets []bench.Dataset
 	Tasks    []bench.LMEvalTask
 	Runs     []bench.Run
@@ -282,7 +278,6 @@ func (s *Server) uiSuitePage(w http.ResponseWriter, r *http.Request) {
 			MaxTokens: bench.DefaultMaxTokens, ReadyTimeoutSec: bench.DefaultReadyTimeout, Limit: 100,
 		},
 	}
-	data.Models, _ = s.catalog.Cached()
 	data.Datasets, _ = s.benchStore.ListDatasets()
 	if runs, err := s.benchStore.ListRuns(); err == nil {
 		for _, run := range runs {

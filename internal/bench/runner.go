@@ -1,7 +1,12 @@
 package bench
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -79,7 +84,7 @@ func (r *Runner) Start(suiteID string, eval EvalSpec) (*Run, error) {
 	if err := eval.Normalize(); err != nil {
 		return nil, err
 	}
-	if eval.Accuracy == AccuracyJSONL && eval.DatasetID != "" {
+	if eval.UsesDataset() && eval.DatasetID != "" {
 		if _, err := r.store.GetDataset(eval.DatasetID); err != nil {
 			return nil, fmt.Errorf("dataset %s: %w", eval.DatasetID, err)
 		}
@@ -158,6 +163,22 @@ func (r *Runner) execute(ctx context.Context, run *Run) {
 	run.Status = RunRunning
 	r.save(run)
 
+	// Stage before stopping anything, so a staging failure leaves the box
+	// as it was.
+	staged, err := r.stageDataset(ctx, run)
+	if err != nil {
+		run.Error = err.Error()
+		for i := range run.Results {
+			run.Results[i].Status = ConfigSkipped
+		}
+		if ctx.Err() != nil {
+			r.finish(run, RunCancelled)
+		} else {
+			r.finish(run, RunFailed)
+		}
+		return
+	}
+
 	if err := r.stopOthers(run); err != nil {
 		run.Error = err.Error()
 		for i := range run.Results {
@@ -173,7 +194,7 @@ func (r *Runner) execute(ctx context.Context, run *Run) {
 			run.Results[i].Status = ConfigSkipped
 			continue
 		}
-		r.runConfig(ctx, run, &run.Results[i])
+		r.runConfig(ctx, run, &run.Results[i], staged)
 		r.save(run)
 	}
 
@@ -235,7 +256,113 @@ func (r *Runner) restore(run *Run) {
 	r.save(run)
 }
 
-func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult) {
+// stagedDataset locates an uploaded dataset after stageDataset copied it to
+// the share.
+type stagedDataset struct {
+	Dir    string // relative to the model root
+	SHA256 string
+}
+
+// stageChunkBytes is the base64 payload per staging job, well under what a
+// Nomad job definition comfortably carries.
+const stageChunkBytes = 256 * 1024
+
+// stageParallel bounds how many staging jobs run at once.
+const stageParallel = 4
+
+// stageDataset copies the run's uploaded dataset onto the model share. The
+// JSONL is gzipped, base64-encoded and split across small batch jobs, each
+// writing one part file; the eval job reassembles and checksums it. Returns
+// nil when the run uses no uploaded dataset.
+func (r *Runner) stageDataset(ctx context.Context, run *Run) (*stagedDataset, error) {
+	if !run.Eval.UsesDataset() || run.Eval.DatasetID == "" {
+		return nil, nil
+	}
+	data, err := r.store.ReadDataset(run.Eval.DatasetID)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(data)
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("compressing dataset: %w", err)
+	}
+	// Splitting base64 text on a multiple of 4 keeps the concatenation valid.
+	encoded := base64.StdEncoding.EncodeToString(gz.Bytes())
+	var parts []string
+	for len(encoded) > stageChunkBytes {
+		parts = append(parts, encoded[:stageChunkBytes])
+		encoded = encoded[stageChunkBytes:]
+	}
+	parts = append(parts, encoded)
+
+	staged := &stagedDataset{Dir: path.Join(jobspec.BenchDir, run.ID, "dataset"), SHA256: hex.EncodeToString(sum[:])}
+	r.log.Info("benchmark: staging dataset", "run", run.ID, "bytes", len(data), "parts", len(parts))
+	timeout := time.Duration(run.Eval.ReadyTimeoutSec) * time.Second
+	for start := 0; start < len(parts); start += stageParallel {
+		end := min(start+stageParallel, len(parts))
+		var jobIDs []string
+		for i := start; i < end; i++ {
+			jobID := fmt.Sprintf("%s%s-stage-%d", jobspec.BenchJobPrefix, Short(run.ID), i)
+			job := jobspec.BenchStageJob(r.env, jobspec.BenchStage{
+				JobID: jobID, Dir: staged.Dir, Name: fmt.Sprintf("part-%04d", i), Content: parts[i],
+			})
+			if err := r.cluster.RegisterJob(job); err != nil {
+				r.purgeJobs(jobIDs)
+				return nil, fmt.Errorf("staging dataset: %w", err)
+			}
+			jobIDs = append(jobIDs, jobID)
+		}
+		err := r.waitBatch(ctx, jobIDs, timeout)
+		r.purgeJobs(jobIDs)
+		if err != nil {
+			return nil, fmt.Errorf("staging dataset: %w", err)
+		}
+	}
+	return staged, nil
+}
+
+// waitBatch polls batch jobs until all complete, any fails, or time runs out.
+func (r *Runner) waitBatch(ctx context.Context, jobIDs []string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	pending := append([]string(nil), jobIDs...)
+	for {
+		var still []string
+		for _, id := range pending {
+			allocID, status, err := r.cluster.BatchStatus(id)
+			switch {
+			case err == nil && status == "complete":
+			case err == nil && status == "failed":
+				return fmt.Errorf("job %s failed: %s", id, firstLine(r.cluster.FailureReason(allocID)))
+			default:
+				still = append(still, id)
+			}
+		}
+		if pending = still; len(pending) == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("jobs did not finish within %s: %s", timeout, strings.Join(pending, ", "))
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("cancelled")
+		case <-time.After(r.Poll):
+		}
+	}
+}
+
+func (r *Runner) purgeJobs(jobIDs []string) {
+	for _, id := range jobIDs {
+		if err := r.cluster.PurgeJob(id); err != nil {
+			r.log.Warn("benchmark: purging job", "job", id, "err", err)
+		}
+	}
+}
+
+func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult, staged *stagedDataset) {
 	name := fmt.Sprintf("%s%s-%d", deploymentPrefix, Short(run.ID), res.Index)
 	res.Deployment = name
 	res.StartedAt = time.Now().UTC()
@@ -281,13 +408,8 @@ func (r *Runner) runConfig(ctx context.Context, run *Run, res *ConfigResult) {
 		ReadyTimeoutSec: run.Eval.ReadyTimeoutSec,
 		OutDir:          path.Join(jobspec.BenchDir, run.ID, fmt.Sprint(res.Index)),
 	}
-	if run.Eval.Accuracy == AccuracyJSONL && run.Eval.DatasetID != "" {
-		data, err := r.store.ReadDataset(run.Eval.DatasetID)
-		if err != nil {
-			fail("reading dataset: %v", err)
-			return
-		}
-		spec.DatasetInline = string(data)
+	if staged != nil {
+		spec.DatasetParts, spec.DatasetSHA256 = staged.Dir, staged.SHA256
 	}
 	if err := r.cluster.RegisterJob(jobspec.BenchEvalJob(r.env, spec)); err != nil {
 		fail("starting eval job: %v", err)

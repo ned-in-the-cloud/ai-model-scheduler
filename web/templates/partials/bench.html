@@ -64,7 +64,7 @@
   <div class="inline">
     {{template "bench-status" .Run.Status}}
     <span class="muted">{{duration .Run.StartedAt .Run.FinishedAt}}</span>
-    <span class="muted">· accuracy: {{.Run.Eval.Accuracy}}{{if .Run.Eval.Tasks}} ({{join .Run.Eval.Tasks ", "}}{{if .Run.Eval.Limit}}, {{.Run.Eval.Limit}} samples{{end}}){{end}}</span>
+    <span class="muted">· accuracy: {{.Run.Eval.Accuracy}}{{if .Run.Eval.Tasks}} ({{join .Run.Eval.Tasks ", "}}{{if .Run.Eval.Limit}}, {{.Run.Eval.Limit}} samples{{end}}){{else if and (eq .Run.Eval.Accuracy "tokens") .Run.Eval.Limit}} ({{.Run.Eval.Limit}} rows){{end}}</span>
     <span class="muted">· concurrency {{joinInts .Run.Eval.Concurrency}} · {{.Run.Eval.Prompts}} req/level · {{.Run.Eval.MaxTokens}} tokens</span>
     <span style="flex:1"></span>
     {{if .Run.Active}}
@@ -109,7 +109,7 @@
     </tbody>
   </table>
   </div>
-  <p class="muted">Best value per row in green. Throughput and accuracy: higher is better; startup, latency, and VRAM: lower is better.</p>
+  <p class="muted">Best value per row in green. Throughput (including dataset prefill/decode) and accuracy: higher is better; startup, latency, and VRAM: lower is better.</p>
 </section>
 {{end}}
 

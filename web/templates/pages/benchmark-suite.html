@@ -59,6 +59,7 @@
         <div class="check-list">
           <label><input type="radio" name="accuracy" value="none" checked> Performance only</label>
           <label><input type="radio" name="accuracy" value="jsonl"> JSONL dataset (normalized exact match)</label>
+          <label><input type="radio" name="accuracy" value="tokens"> JSONL dataset, raw token speed <span class="muted">(prefill/decode rates; answers not checked)</span></label>
           <label><input type="radio" name="accuracy" value="lmeval"> lm-eval-harness tasks</label>
         </div>
         <label>Dataset
@@ -75,7 +76,7 @@
         </div>
         <label>Other harness tasks <span class="muted">(comma-separated; must work with chat completions)</span>
           <input name="extra_tasks"></label>
-        <label>Samples per task <span class="muted">(0 = full dataset; runs can take hours)</span>
+        <label>Sample limit <span class="muted">(per harness task, or dataset rows for raw token speed; 0 = all; runs can take hours)</span>
           <input name="limit" type="number" value="{{.Defaults.Limit}}"></label>
       </div>
     </div>

@@ -34,7 +34,8 @@ type fakeCluster struct {
 	failDeploy  map[string]bool // "bench-*-<idx>" patterns whose allocation fails
 	jobs        map[string]int  // registered eval jobs -> poll count
 	jobsSeen    int
-	hang        bool // eval jobs never complete
+	registered  []*api.Job // every job passed to RegisterJob, in order
+	hang        bool       // eval jobs never complete
 	nextPort    int
 }
 
@@ -131,6 +132,7 @@ func (f *fakeCluster) RegisterJob(job *api.Job) error {
 	defer f.mu.Unlock()
 	f.jobs[*job.ID] = 0
 	f.jobsSeen++
+	f.registered = append(f.registered, job)
 	return nil
 }
 

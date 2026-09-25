@@ -163,6 +163,23 @@ func BuildTable(run Run) Table {
 		)
 	}
 
+	tokens := func(get func(t *TokenSpeed) float64) func(m *Metrics) (float64, bool) {
+		return func(m *Metrics) (float64, bool) {
+			if m.Tokens == nil || m.Tokens.Requests == 0 {
+				return 0, false
+			}
+			return get(m.Tokens), true
+		}
+	}
+	rows = append(rows,
+		metricRow{"Dataset prefill tok/s", tokens(func(t *TokenSpeed) float64 { return t.PrefillTokPerSec }), fmtFloat(1, ""), +1},
+		metricRow{"Dataset decode tok/s", tokens(func(t *TokenSpeed) float64 { return t.DecodeTokPerSec }), fmtFloat(1, ""), +1},
+		metricRow{"Dataset TTFT p50 (ms)", tokens(func(t *TokenSpeed) float64 { return t.TTFTP50Ms }), fmtFloat(0, ""), -1},
+		metricRow{"Dataset TTFT p95 (ms)", tokens(func(t *TokenSpeed) float64 { return t.TTFTP95Ms }), fmtFloat(0, ""), -1},
+		metricRow{"Dataset prompt tokens", tokens(func(t *TokenSpeed) float64 { return float64(t.PromptTokens) }), fmtFloat(0, ""), 0},
+		metricRow{"Dataset completion tokens", tokens(func(t *TokenSpeed) float64 { return float64(t.CompletionTokens) }), fmtFloat(0, ""), 0},
+	)
+
 	rows = append(rows, metricRow{"Accuracy (%)", func(m *Metrics) (float64, bool) {
 		if m.Accuracy == nil {
 			return 0, false

@@ -85,20 +85,25 @@ const (
 	AccuracyNone   = "none"
 	AccuracyJSONL  = "jsonl"
 	AccuracyLMEval = "lmeval"
+	// AccuracyTokens replays a JSONL dataset's prompts purely to measure
+	// prefill and decode speed; responses are not scored.
+	AccuracyTokens = "tokens"
 )
 
 // EvalSpec describes what a run measures against each configuration.
 type EvalSpec struct {
-	// Accuracy selects the accuracy evaluation: none, jsonl, or lmeval.
+	// Accuracy selects the dataset evaluation: none, jsonl, lmeval, or
+	// tokens (a dataset replayed for prefill/decode speed, not scored).
 	Accuracy string `json:"accuracy"`
-	// DatasetID names an uploaded JSONL dataset (Accuracy=jsonl).
+	// DatasetID names an uploaded JSONL dataset (Accuracy=jsonl|tokens).
 	DatasetID string `json:"dataset_id,omitempty"`
 	// DatasetPath is a JSONL file on the model share, relative to its root,
-	// for datasets too large to upload (Accuracy=jsonl).
+	// for datasets too large to upload (Accuracy=jsonl|tokens).
 	DatasetPath string `json:"dataset_path,omitempty"`
 	// Tasks are lm-eval-harness task names (Accuracy=lmeval).
 	Tasks []string `json:"tasks,omitempty"`
-	// Limit caps samples per lm-eval task; 0 = whole dataset.
+	// Limit caps samples per lm-eval task, or dataset rows replayed for
+	// Accuracy=tokens; 0 = whole dataset.
 	Limit int `json:"limit,omitempty"`
 
 	// Concurrency levels for the load test; empty = [1 4 8].
@@ -111,6 +116,11 @@ type EvalSpec struct {
 	// ReadyTimeoutSec bounds how long a config may take to become healthy
 	// and answer its first request (including image pull); 0 = 900.
 	ReadyTimeoutSec int `json:"ready_timeout_sec,omitempty"`
+}
+
+// UsesDataset reports whether the eval replays a JSONL dataset.
+func (e EvalSpec) UsesDataset() bool {
+	return e.Accuracy == AccuracyJSONL || e.Accuracy == AccuracyTokens
 }
 
 // Defaults for EvalSpec fields left zero.
@@ -126,9 +136,9 @@ func (e *EvalSpec) Normalize() error {
 	switch e.Accuracy {
 	case "", AccuracyNone:
 		e.Accuracy = AccuracyNone
-	case AccuracyJSONL:
+	case AccuracyJSONL, AccuracyTokens:
 		if e.DatasetID == "" && e.DatasetPath == "" {
-			return fmt.Errorf("jsonl accuracy needs a dataset")
+			return fmt.Errorf("%s evaluation needs a dataset", e.Accuracy)
 		}
 		if e.DatasetPath != "" && (strings.Contains(e.DatasetPath, "..") || strings.HasPrefix(e.DatasetPath, "/")) {
 			return fmt.Errorf("invalid dataset path %q", e.DatasetPath)
@@ -230,6 +240,7 @@ type Metrics struct {
 	Single      *SingleStream `json:"single,omitempty"`
 	Concurrency []ConcResult  `json:"concurrency,omitempty"`
 	Accuracy    *Accuracy     `json:"accuracy,omitempty"`
+	Tokens      *TokenSpeed   `json:"tokens,omitempty"`
 	Resources   *Resources    `json:"resources,omitempty"`
 	WaitSec     float64       `json:"wait_sec,omitempty"` // eval job's wait for readiness
 	Errors      []string      `json:"errors,omitempty"`
@@ -252,6 +263,21 @@ type ConcResult struct {
 	LatencyP95Ms float64 `json:"latency_ms_p95"`
 	Requests     int     `json:"requests"`
 	Errors       int     `json:"errors"`
+}
+
+// TokenSpeed is the raw prefill/decode measurement from replaying a dataset
+// one request at a time, without scoring the responses.
+type TokenSpeed struct {
+	// PrefillTokPerSec is prompt tokens over time-to-first-token.
+	PrefillTokPerSec float64 `json:"prefill_tok_per_sec"`
+	// DecodeTokPerSec is completion tokens over the time after the first.
+	DecodeTokPerSec  float64 `json:"decode_tok_per_sec"`
+	TTFTP50Ms        float64 `json:"ttft_ms_p50"`
+	TTFTP95Ms        float64 `json:"ttft_ms_p95"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	Requests         int     `json:"requests"`
+	Errors           int     `json:"errors"`
 }
 
 // Accuracy is the accuracy evaluation result.

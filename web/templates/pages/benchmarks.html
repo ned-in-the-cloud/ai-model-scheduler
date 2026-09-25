@@ -68,7 +68,7 @@ configs:
 
 <h2>Datasets</h2>
 <section class="card">
-  <p class="muted">JSONL accuracy sets: one object per line with <code>prompt</code> and <code>expected</code> (optional <code>system</code>). Scored by normalized exact match. Uploads are limited to 512 KB; larger files can live on the model share and be referenced by path when starting a run.</p>
+  <p class="muted">JSONL accuracy sets: one object per line with <code>prompt</code> and <code>expected</code> (optional <code>system</code>). Scored by normalized exact match, or replayed unscored to measure raw prefill/decode speed. Uploads are limited to 10 MB and are copied to the model share at the start of each run; larger files can live on the share and be referenced by path.</p>
   {{if .Datasets}}
   <table>
     <thead><tr><th>Name</th><th>Rows</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>

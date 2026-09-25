@@ -25,11 +25,15 @@ type BenchEval struct {
 	ModelName string // served model name (deployment name)
 	Runtime   string
 
-	Accuracy      string   // none | jsonl | lmeval
-	DatasetInline string   // JSONL content shipped inside the job (jsonl)
-	DatasetPath   string   // JSONL path relative to the model root (jsonl)
+	Accuracy string // none | jsonl | lmeval | tokens
+	// DatasetParts is a directory, relative to the model root, holding an
+	// uploaded dataset staged by BenchStageJob: gzip+base64 split into
+	// part-NNNN files. DatasetSHA256 is the decoded JSONL's checksum.
+	DatasetParts  string
+	DatasetSHA256 string
+	DatasetPath   string   // JSONL path relative to the model root (jsonl|tokens)
 	Tasks         []string // lm-eval task names (lmeval)
-	Limit         int      // samples per task; 0 = all
+	Limit         int      // samples per task, or dataset rows (tokens); 0 = all
 
 	Concurrency     []int
 	Prompts         int
@@ -69,8 +73,9 @@ func BenchEvalJob(env Env, spec BenchEval) *api.Job {
 		// Cache harness datasets on the share so repeat runs skip the download.
 		"HF_HOME": path.Join(env.ModelMount, BenchDir, ".hf-cache"),
 	}
-	if spec.DatasetInline != "" {
-		taskEnv["BENCH_DATASET"] = "/local/dataset.jsonl"
+	if spec.DatasetParts != "" {
+		taskEnv["BENCH_DATASET_PARTS"] = path.Join(env.ModelMount, spec.DatasetParts)
+		taskEnv["BENCH_DATASET_SHA256"] = spec.DatasetSHA256
 	} else if spec.DatasetPath != "" {
 		taskEnv["BENCH_DATASET"] = path.Join(env.ModelMount, spec.DatasetPath)
 	}
@@ -89,18 +94,54 @@ func BenchEvalJob(env Env, spec BenchEval) *api.Job {
 	if env.ImagePullTimeout != "" {
 		task.Config["image_pull_timeout"] = env.ImagePullTimeout
 	}
-	if spec.DatasetInline != "" {
-		task.Templates = []*api.Template{{
-			EmbeddedTmpl: ptr(spec.DatasetInline),
-			DestPath:     ptr("local/dataset.jsonl"),
+	return benchBatchJob(spec.JobID, "eval", task)
+}
+
+// BenchStage describes one dataset staging job: it writes Content to
+// Dir/Name on the model share.
+type BenchStage struct {
+	JobID   string
+	Dir     string // relative to the model root
+	Name    string
+	Content string // text; the caller base64-encodes binary data
+}
+
+// BenchStageJob builds a small batch job that copies inline content onto
+// the model share. The app cannot write the share itself, and a Nomad job
+// definition can only carry a few hundred KB, so large uploads are split
+// across several of these.
+func BenchStageJob(env Env, spec BenchStage) *api.Job {
+	task := &api.Task{
+		Name:   nomadapi.TaskName,
+		Driver: env.Driver,
+		Config: map[string]any{
+			"image":   env.Images.Bench,
+			"volumes": []string{fmt.Sprintf("%s:%s", env.ModelRootHost, env.ModelMount)},
+		},
+		Env: map[string]string{
+			"BENCH_MODE":       "stage",
+			"BENCH_STAGE_SRC":  "/local/part",
+			"BENCH_STAGE_DEST": path.Join(env.ModelMount, spec.Dir, spec.Name),
+		},
+		Resources: &api.Resources{CPU: ptr(100), MemoryMB: ptr(128)},
+		Templates: []*api.Template{{
+			EmbeddedTmpl: ptr(spec.Content),
+			DestPath:     ptr("local/part"),
 			LeftDelim:    ptr(benchTmplLeft),
 			RightDelim:   ptr(benchTmplRight),
 			ChangeMode:   ptr("noop"),
-		}}
+		}},
 	}
+	if env.ImagePullTimeout != "" {
+		task.Config["image_pull_timeout"] = env.ImagePullTimeout
+	}
+	return benchBatchJob(spec.JobID, "stage", task)
+}
 
+// benchBatchJob wraps a task in a run-once batch job.
+func benchBatchJob(jobID, groupName string, task *api.Task) *api.Job {
 	group := &api.TaskGroup{
-		Name:          ptr("eval"),
+		Name:          ptr(groupName),
 		Count:         ptr(1),
 		Tasks:         []*api.Task{task},
 		RestartPolicy: &api.RestartPolicy{Attempts: ptr(0), Mode: ptr("fail")},
@@ -108,8 +149,8 @@ func BenchEvalJob(env Env, spec BenchEval) *api.Job {
 		ReschedulePolicy: &api.ReschedulePolicy{Attempts: ptr(0), Unlimited: ptr(false)},
 	}
 	return &api.Job{
-		ID:          ptr(spec.JobID),
-		Name:        ptr(spec.JobID),
+		ID:          ptr(jobID),
+		Name:        ptr(jobID),
 		Type:        ptr(api.JobTypeBatch),
 		Datacenters: []string{"*"},
 		TaskGroups:  []*api.TaskGroup{group},

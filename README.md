@@ -110,10 +110,18 @@ Each config is measured for:
   1, 4, 8), plus time to first response and peak VRAM / average GPU
   utilization sampled from the stats agent.
 - **Accuracy** (optional) — a JSONL dataset (`{"prompt": ..., "expected":
-  ...}` per line, scored by normalized exact match; upload up to 512 KB or
+  ...}` per line, scored by normalized exact match; upload up to 10 MB or
   point at a larger file on the share), or lm-eval-harness tasks from a
   curated list with a per-task sample limit. Harness datasets are cached on
   the share under `_benchmarks/.hf-cache`.
+- **Raw token speed** (alternative to accuracy) — the same JSONL dataset's
+  prompts replayed one at a time without checking the answers, reporting
+  prefill tokens/s (prompt tokens over time to first token), decode
+  tokens/s, and TTFT percentiles. The sample limit caps the rows replayed.
+
+Uploaded datasets are copied to `_benchmarks/<run>/dataset/` on the share at
+the start of each run by a few small staging jobs (the app has no share
+access, and a Nomad job can only carry a few hundred KB inline).
 
 Results appear as a side-by-side table (best value per row highlighted) with
 CSV and JSON export, and a copy of each config's raw result is written to

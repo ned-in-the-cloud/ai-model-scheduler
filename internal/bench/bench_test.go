@@ -1,10 +1,19 @@
 package bench
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/nomad/api"
 )
 
 func testStore(t *testing.T) *Store {
@@ -134,7 +143,7 @@ func TestStoreDatasets(t *testing.T) {
 		{"missing expected", "{\"prompt\":\"x\"}\n", "expected"},
 		{"prompt not string", "{\"prompt\":1,\"expected\":\"x\"}\n", "prompt"},
 		{"empty", "\n\n", "no rows"},
-		{"too big", strings.Repeat("{\"prompt\":\"x\",\"expected\":\"y\"}\n", 20000), "limited"},
+		{"too big", strings.Repeat("{\"prompt\":\"x\",\"expected\":\"y\"}\n", MaxDatasetBytes/30+1), "limited"},
 	}
 	for _, tt := range bad {
 		if _, err := s.SaveDataset("d", []byte(tt.body)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -158,6 +167,7 @@ func TestEvalSpecNormalize(t *testing.T) {
 		{name: "defaults", spec: EvalSpec{}},
 		{name: "jsonl needs dataset", spec: EvalSpec{Accuracy: "jsonl"}, wantErr: "dataset"},
 		{name: "jsonl path traversal", spec: EvalSpec{Accuracy: "jsonl", DatasetPath: "../x"}, wantErr: "invalid dataset path"},
+		{name: "tokens needs dataset", spec: EvalSpec{Accuracy: "tokens"}, wantErr: "dataset"},
 		{name: "lmeval needs tasks", spec: EvalSpec{Accuracy: "lmeval"}, wantErr: "task"},
 		{name: "lmeval bad task", spec: EvalSpec{Accuracy: "lmeval", Tasks: []string{"a b"}}, wantErr: "invalid task"},
 		{name: "bad concurrency", spec: EvalSpec{Concurrency: []int{0}}, wantErr: "concurrency"},
@@ -325,6 +335,107 @@ func TestRunnerHappyPath(t *testing.T) {
 	}
 	if fc.jobsSeen != 2 {
 		t.Errorf("eval jobs registered = %d, want 2", fc.jobsSeen)
+	}
+}
+
+func TestRunnerStagesUploadedDataset(t *testing.T) {
+	store := testStore(t)
+	suite := &Suite{Name: "s", Configs: []Config{
+		{Label: "a", Runtime: "vllm", Model: "m", GPU: "nvidia"},
+		{Label: "b", Runtime: "vllm", Model: "m", GPU: "nvidia"},
+	}}
+	_ = store.SaveSuite(suite)
+	// Random-ish rows so gzip can't shrink the set into a single part.
+	var sb strings.Builder
+	for i := 0; sb.Len() < 3<<20; i++ {
+		fmt.Fprintf(&sb, "{\"prompt\":\"%x\",\"expected\":\"%d\"}\n", sha256.Sum256([]byte(fmt.Sprint(i))), i)
+	}
+	content := sb.String()
+	ds, err := store.SaveDataset("big", []byte(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc := newFakeCluster()
+	fc.existing("prod-model", 8000)
+	r := NewRunner(store, fc, testEnv(), slog.New(slog.DiscardHandler))
+	r.Poll = time.Millisecond
+	run, err := r.Start(suite.ID, EvalSpec{Accuracy: AccuracyTokens, DatasetID: ds.ID, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wait()
+	got, _ := store.GetRun(run.ID)
+	if got.Status != RunComplete {
+		t.Fatalf("status = %s (%s)", got.Status, got.Error)
+	}
+
+	// Stage jobs come first and together carry the whole dataset; both eval
+	// jobs point at the staged copy.
+	var encoded strings.Builder
+	var evals []*api.Job
+	for _, job := range fc.registered {
+		task := job.TaskGroups[0].Tasks[0]
+		if strings.Contains(*job.ID, "-stage-") {
+			if len(evals) > 0 {
+				t.Errorf("stage job %s registered after an eval job", *job.ID)
+			}
+			if n := len(*task.Templates[0].EmbeddedTmpl); n > stageChunkBytes {
+				t.Errorf("stage job %s carries %d bytes", *job.ID, n)
+			}
+			encoded.WriteString(*task.Templates[0].EmbeddedTmpl)
+			continue
+		}
+		evals = append(evals, job)
+	}
+	if stages := len(fc.registered) - len(evals); stages < 2 {
+		t.Errorf("stage jobs = %d, want the dataset split across several", stages)
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _ := io.ReadAll(zr)
+	if string(decoded) != content {
+		t.Errorf("staged parts decode to %d bytes, want the %d-byte dataset", len(decoded), len(content))
+	}
+	sum := sha256.Sum256([]byte(content))
+	if len(evals) != 2 {
+		t.Fatalf("eval jobs = %d, want 2", len(evals))
+	}
+	for _, job := range evals {
+		env := job.TaskGroups[0].Tasks[0].Env
+		if env["BENCH_DATASET_PARTS"] != "/models/_benchmarks/"+run.ID+"/dataset" ||
+			env["BENCH_DATASET_SHA256"] != hex.EncodeToString(sum[:]) ||
+			env["BENCH_ACCURACY"] != "tokens" || env["BENCH_LIMIT"] != "50" {
+			t.Errorf("eval env = %v", env)
+		}
+	}
+	if len(fc.jobs) != 0 {
+		t.Errorf("jobs left registered: %v", fc.jobs)
+	}
+}
+
+func TestBuildTableTokenSpeed(t *testing.T) {
+	run := Run{Results: []ConfigResult{
+		{Label: "a", Status: ConfigComplete, Metrics: &Metrics{Tokens: &TokenSpeed{PrefillTokPerSec: 900, DecodeTokPerSec: 40, TTFTP50Ms: 300, Requests: 10, PromptTokens: 5000}}},
+		{Label: "b", Status: ConfigComplete, Metrics: &Metrics{Tokens: &TokenSpeed{PrefillTokPerSec: 1200, DecodeTokPerSec: 35, TTFTP50Ms: 250, Requests: 10, PromptTokens: 5000}}},
+	}}
+	rows := map[string]Row{}
+	for _, row := range BuildTable(run).Rows {
+		rows[row.Name] = row
+	}
+	if r := rows["Dataset prefill tok/s"]; len(r.Cells) != 2 || !r.Cells[1].Best || r.Cells[0].Best {
+		t.Errorf("prefill row = %+v", r)
+	}
+	if r := rows["Dataset decode tok/s"]; len(r.Cells) != 2 || !r.Cells[0].Best {
+		t.Errorf("decode row = %+v", r)
+	}
+	if _, ok := rows["Accuracy (%)"]; ok {
+		t.Error("token speed run should have no accuracy row")
 	}
 }
 

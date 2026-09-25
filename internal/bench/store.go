@@ -220,10 +220,10 @@ func (s *Store) DeleteRun(id string) error {
 
 // Datasets
 
-// MaxDatasetBytes bounds uploads: the dataset travels to the eval job inside
-// a Nomad job definition, which Nomad caps at roughly a megabyte. Larger sets
-// go on the model share and are referenced by path.
-const MaxDatasetBytes = 512 * 1024
+// MaxDatasetBytes bounds uploads. The app has no share access, so a run
+// stages the dataset there through small Nomad jobs (see Runner.stageDataset);
+// larger sets go on the model share directly and are referenced by path.
+const MaxDatasetBytes = 10 << 20
 
 // SaveDataset validates JSONL content (each row needs prompt and expected)
 // and stores it with a metadata record.
@@ -233,7 +233,7 @@ func (s *Store) SaveDataset(name string, content []byte) (*Dataset, error) {
 		return nil, fmt.Errorf("dataset name is required")
 	}
 	if len(content) > MaxDatasetBytes {
-		return nil, fmt.Errorf("dataset is %d bytes; uploads are limited to %d (put larger files on the model share and use a path)", len(content), MaxDatasetBytes)
+		return nil, fmt.Errorf("dataset is %d bytes; uploads are limited to %d MB (put larger files on the model share and use a path)", len(content), MaxDatasetBytes>>20)
 	}
 	rows, err := countJSONLRows(content)
 	if err != nil {

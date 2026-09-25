@@ -13,11 +13,20 @@ Measurements:
   * concurrency sweep: N parallel requests -> aggregate tok/s, latency p50/p95
   * accuracy: a JSONL prompt/expected set (normalized exact match) or
     lm-eval-harness tasks via its local-chat-completions backend
+  * token speed: a JSONL set's prompts replayed one at a time, measuring
+    prefill and decode rates without scoring the responses
+
+With BENCH_MODE=stage it instead copies BENCH_STAGE_SRC to BENCH_STAGE_DEST:
+the app uses that to put uploaded datasets on the model share in parts.
 """
 
+import base64
 import glob
+import gzip
+import hashlib
 import json
 import os
+import shutil
 import re
 import statistics
 import subprocess
@@ -39,6 +48,8 @@ MAX_TOKENS = int(os.environ.get("BENCH_MAX_TOKENS", "256") or 256)
 READY_TIMEOUT = int(os.environ.get("BENCH_READY_TIMEOUT", "900") or 900)
 OUT_DIR = os.environ.get("BENCH_OUT_DIR", "")
 DATASET = os.environ.get("BENCH_DATASET", "")
+DATASET_PARTS = os.environ.get("BENCH_DATASET_PARTS", "")
+DATASET_SHA256 = os.environ.get("BENCH_DATASET_SHA256", "")
 
 REQUEST_TIMEOUT = 600  # seconds per request; long generations on slow GPUs
 
@@ -116,13 +127,13 @@ def wait_ready():
 
 # --- streamed request ----------------------------------------------------
 
-def chat_stream(prompt, max_tokens):
-    """One streamed chat completion. Returns timing + token count."""
+def chat_stream(prompt, max_tokens, messages=None, temperature=0.7):
+    """One streamed chat completion. Returns timing + token counts."""
     body = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages or [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
-        "temperature": 0.7,
+        "temperature": temperature,
         "stream": True,
         "stream_options": {"include_usage": True},
     }
@@ -133,6 +144,7 @@ def chat_stream(prompt, max_tokens):
     first = None
     chunks = 0
     usage_tokens = None
+    prompt_tokens = None
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
         for raw in resp:
             line = raw.decode("utf-8", "replace").strip()
@@ -148,6 +160,8 @@ def chat_stream(prompt, max_tokens):
             usage = obj.get("usage")
             if usage and usage.get("completion_tokens") is not None:
                 usage_tokens = usage["completion_tokens"]
+            if usage and usage.get("prompt_tokens") is not None:
+                prompt_tokens = usage["prompt_tokens"]
             for choice in obj.get("choices") or []:
                 delta = choice.get("delta") or {}
                 if delta.get("content"):
@@ -158,7 +172,8 @@ def chat_stream(prompt, max_tokens):
     if first is None:
         first = end
     tokens = usage_tokens if usage_tokens is not None else chunks
-    return {"ttft": first - t0, "total": end - t0, "decode": end - first, "tokens": tokens}
+    return {"ttft": first - t0, "total": end - t0, "decode": end - first, "tokens": tokens,
+            "prompt_tokens": prompt_tokens}
 
 
 def prompt_list(n):
@@ -222,25 +237,34 @@ def normalize(s):
     return s.strip(" .")
 
 
-def eval_jsonl(path):
+def load_rows(path):
     rows = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 rows.append(json.loads(line))
+    return rows
+
+
+def row_messages(row):
+    messages = []
+    if row.get("system"):
+        messages.append({"role": "system", "content": row["system"]})
+    messages.append({"role": "user", "content": row["prompt"]})
+    return messages
+
+
+def eval_jsonl(path):
+    rows = load_rows(path)
     correct, samples = 0, []
     max_tokens = max(MAX_TOKENS, 256)
     for i, row in enumerate(rows):
         if i % 10 == 0:
             progress(f"jsonl eval {i}/{len(rows)}")
-        messages = []
-        if row.get("system"):
-            messages.append({"role": "system", "content": row["system"]})
-        messages.append({"role": "user", "content": row["prompt"]})
         try:
             resp = http_json("/v1/chat/completions", {
-                "model": MODEL, "messages": messages,
+                "model": MODEL, "messages": row_messages(row),
                 "max_tokens": max_tokens, "temperature": 0,
             })
             text = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
@@ -255,6 +279,74 @@ def eval_jsonl(path):
     total = len(rows)
     return {"kind": "jsonl", "score": round(correct / total, 4) if total else 0,
             "correct": correct, "total": total, "samples": samples}
+
+
+# --- token speed: JSONL replay, unscored -------------------------------------
+
+def eval_tokens(path, limit):
+    """Replay dataset prompts sequentially, measuring prefill and decode.
+
+    Prefill rate is prompt tokens over time-to-first-token (which includes
+    request overhead, so short prompts understate it); decode rate is
+    completion tokens over the rest of the response.
+    """
+    rows = load_rows(path)
+    if limit > 0:
+        rows = rows[:limit]
+    results, errs = [], 0
+    for i, row in enumerate(rows):
+        if i % 10 == 0:
+            progress(f"token speed {i}/{len(rows)}")
+        try:
+            results.append(chat_stream(None, MAX_TOKENS, messages=row_messages(row), temperature=0))
+        except Exception as e:  # noqa: BLE001
+            errs += 1
+            errors.append(f"token speed row {i}: {e}")
+    if not results:
+        return {"prefill_tok_per_sec": 0, "decode_tok_per_sec": 0, "ttft_ms_p50": 0, "ttft_ms_p95": 0,
+                "prompt_tokens": 0, "completion_tokens": 0, "requests": 0, "errors": errs}
+    if any(r["prompt_tokens"] is None for r in results):
+        errors.append("server did not report prompt token usage; prefill rate unavailable")
+    prompt_tokens = sum(r["prompt_tokens"] or 0 for r in results)
+    completion_tokens = sum(r["tokens"] for r in results)
+    ttft = sum(r["ttft"] for r in results)
+    decode = sum(r["decode"] for r in results)
+    ttfts = [r["ttft"] * 1000 for r in results]
+    return {
+        "prefill_tok_per_sec": round(prompt_tokens / ttft, 2) if ttft > 0 else 0,
+        "decode_tok_per_sec": round(completion_tokens / decode, 2) if decode > 0 else 0,
+        "ttft_ms_p50": round(percentile(ttfts, 50), 1),
+        "ttft_ms_p95": round(percentile(ttfts, 95), 1),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "requests": len(results),
+        "errors": errs,
+    }
+
+
+# --- dataset staging -----------------------------------------------------------
+
+def stage():
+    """BENCH_MODE=stage: copy one staged part onto the share."""
+    src, dest = os.environ["BENCH_STAGE_SRC"], os.environ["BENCH_STAGE_DEST"]
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(src, dest)
+    log(f"staged {os.path.getsize(dest)} bytes to {dest}")
+
+
+def assemble_dataset(parts_dir, want_sha):
+    """Rebuild an uploaded dataset from its staged gzip+base64 parts."""
+    parts = sorted(glob.glob(os.path.join(parts_dir, "part-*")))
+    if not parts:
+        raise RuntimeError(f"no staged dataset parts in {parts_dir}")
+    encoded = "".join(open(p, encoding="ascii").read().strip() for p in parts)
+    data = gzip.decompress(base64.b64decode(encoded))
+    if want_sha and hashlib.sha256(data).hexdigest() != want_sha:
+        raise RuntimeError("staged dataset checksum mismatch")
+    out = "/tmp/dataset.jsonl"
+    with open(out, "wb") as f:
+        f.write(data)
+    return out
 
 
 # --- accuracy: lm-eval-harness --------------------------------------------
@@ -318,6 +410,16 @@ def eval_lmeval(tasks, limit):
 # --- main --------------------------------------------------------------------
 
 def main():
+    if os.environ.get("BENCH_MODE") == "stage":
+        stage()
+        return
+
+    dataset = DATASET
+    if DATASET_PARTS:
+        # Fail fast: a bad staged copy would otherwise surface only after
+        # the whole performance pass.
+        dataset = assemble_dataset(DATASET_PARTS, DATASET_SHA256)
+
     model, wait_sec = wait_ready()
     log(f"endpoint ready in {wait_sec:.1f}s, model={model}")
     result = {"wait_sec": round(wait_sec, 1)}
@@ -325,14 +427,18 @@ def main():
     result["single"] = single_stream()
     result["concurrency"] = [concurrency_level(n) for n in CONCURRENCY]
 
-    if ACCURACY == "jsonl":
-        if not DATASET or not os.path.exists(DATASET):
-            errors.append(f"dataset not found: {DATASET}")
-        else:
-            try:
-                result["accuracy"] = eval_jsonl(DATASET)
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"jsonl eval failed: {e}")
+    if ACCURACY in ("jsonl", "tokens") and (not dataset or not os.path.exists(dataset)):
+        errors.append(f"dataset not found: {dataset}")
+    elif ACCURACY == "jsonl":
+        try:
+            result["accuracy"] = eval_jsonl(dataset)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"jsonl eval failed: {e}")
+    elif ACCURACY == "tokens":
+        try:
+            result["tokens"] = eval_tokens(dataset, LIMIT)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"token speed eval failed: {e}")
     elif ACCURACY == "lmeval":
         try:
             result["accuracy"] = eval_lmeval(TASKS, LIMIT)
